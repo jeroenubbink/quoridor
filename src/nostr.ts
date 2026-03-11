@@ -158,15 +158,6 @@ export async function publishProfile(displayName: string): Promise<void> {
 
 // ─── Profile search ───────────────────────────────────────────────────────────
 
-// Relays that support NIP-50 full-text search on kind-0 events.
-// relay.nostr.band is already a bootstrap relay; the others are added only for
-// search queries so they don't affect the main event routing.
-const SEARCH_RELAY_URLS = [
-  'wss://relay.nostr.band',
-  'wss://nostr.wine',
-  'wss://search.nos.lol',
-] as const;
-
 export interface ProfileSearchResult {
   pubkey: string;
   displayName: string | null;
@@ -179,13 +170,23 @@ export async function searchProfiles(
   limit = 8,
 ): Promise<ProfileSearchResult[]> {
   const ndk = getNdk();
-  const relaySet = NDKRelaySet.fromRelayUrls(SEARCH_RELAY_URLS, ndk);
 
-  const events = await ndk.fetchEvents(
-    { kinds: [0], search: query, limit } as NDKFilter,
-    { groupable: false },
-    relaySet,
-  );
+  // relay.nostr.band supports NIP-50 and is already connected from bootstrap —
+  // use its existing pool instance so no new WebSocket is opened.
+  const bandRelay = ndk.pool.getRelay('wss://relay.nostr.band', false, false);
+  const relaySet = bandRelay
+    ? new NDKRelaySet(new Set([bandRelay]), ndk)
+    : undefined;
+
+  // Race against a 6s timeout so the UI never hangs.
+  const events = await Promise.race([
+    ndk.fetchEvents(
+      { kinds: [0], search: query, limit } as NDKFilter,
+      { groupable: false, closeOnEose: true },
+      relaySet,
+    ),
+    new Promise<Set<NDKEvent>>(resolve => setTimeout(() => resolve(new Set()), 6000)),
+  ]);
 
   const results: ProfileSearchResult[] = [];
   for (const ev of events) {
