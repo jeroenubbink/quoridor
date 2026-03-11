@@ -49,6 +49,7 @@ interface Session {
 interface GameEntry {
   session: Session;
   gameState: GameState;
+  opponentSeen: boolean; // true once we receive the first event from the opponent
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -192,7 +193,7 @@ export default function App() {
         const all = savedSessions.load();
         if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
         if (gameId === activeGameIdRef.current) setTimeoutWarning(false);
-        return { ...prev, [gameId]: { ...entry, gameState: incoming } };
+        return { ...prev, [gameId]: { ...entry, gameState: incoming, opponentSeen: true } };
       });
       if (incoming.currentPlayer === myPlayer) notifyTurn(gameId);
     });
@@ -270,7 +271,7 @@ export default function App() {
       await publishInvite(opponentPubkey, gameId, code);
 
       const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: 1, lastEventId: eventId, joinCode: code };
-      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial } }));
+      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false } }));
       savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: 1, joinCode: code, lastMoveAt: Date.now() });
       setActiveGameId(gameId);
       setPhase('playing');
@@ -295,7 +296,7 @@ export default function App() {
 
     addSubscription(gameId, 2, p1Pubkey);
     const session: Session = { myPubkey, opponentPubkey: p1Pubkey, gameId, myPlayer: 2, lastEventId: null, joinCode: joinCodeStr };
-    setGames(prev => ({ ...prev, [gameId]: { session, gameState: createInitialState() } }));
+    setGames(prev => ({ ...prev, [gameId]: { session, gameState: createInitialState(), opponentSeen: false } }));
     savedSessions.upsert({ gameId, myPubkey, opponentPubkey: p1Pubkey, myPlayer: 2, joinCode: joinCodeStr, lastMoveAt: Date.now() });
     setActiveGameId(gameId);
     setPhase('playing');
@@ -508,7 +509,7 @@ export default function App() {
           lastEventId: resumed?.myLastEventId ?? null,
           joinCode: ss.joinCode,
         };
-        newGames[ss.gameId] = { session, gameState };
+        newGames[ss.gameId] = { session, gameState, opponentSeen: false };
       }
 
       setGames(newGames);
@@ -788,9 +789,9 @@ export default function App() {
                 )
               )}
             </div>
-            {activeEntry.session.myPlayer === 1 && (
+            {activeEntry.session.myPlayer === 1 && !activeEntry.opponentSeen && (
               <div className="join-code-box" style={{ marginTop: '0.5rem' }}>
-                <p className="join-code-label">Join code (share with opponent):</p>
+                <p className="join-code-label">Share this code with your opponent:</p>
                 <code className="join-code">{activeEntry.session.joinCode}</code>
                 <button
                   className="btn btn-small"
