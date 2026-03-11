@@ -17,6 +17,11 @@ import {
   npubFromPubkey,
   publishMove,
   subscribeToGame,
+  publishSeek,
+  cancelSeek,
+  subscribeToSeeks,
+  publishInvite,
+  subscribeToInvites,
 } from './nostr';
 import { UserCard } from './UserCard';
 import { savedKey, savedSessions } from './storage';
@@ -66,6 +71,13 @@ export default function App() {
   // One subscription per game.
   const subsRef = useRef<Map<string, NDKSubscription>>(new Map());
 
+  // ── Matchmaking state ───────────────────────────────────────────────────────
+  const [seeking, setSeeking] = useState(false);
+  const seekEventIdRef  = useRef<string | null>(null);
+  const seekSubRef      = useRef<NDKSubscription | null>(null);
+  const inviteSubRef    = useRef<NDKSubscription | null>(null);
+  const matchedRef      = useRef(false); // prevents double-match race
+
   // ── Lobby form state ────────────────────────────────────────────────────────
 
   const [lobbyTab, setLobbyTab] = useState<'create' | 'join'>('create');
@@ -80,7 +92,11 @@ export default function App() {
 
   // ── Cleanup all subscriptions on unmount ────────────────────────────────────
 
-  useEffect(() => () => { subsRef.current.forEach(sub => sub.stop()); }, []);
+  useEffect(() => () => {
+    subsRef.current.forEach(sub => sub.stop());
+    seekSubRef.current?.stop();
+    inviteSubRef.current?.stop();
+  }, []);
 
   // ── Notifications ───────────────────────────────────────────────────────────
 
@@ -174,6 +190,107 @@ export default function App() {
     subsRef.current.set(gameId, sub);
   }, []);
 
+  // ── Matchmaking ─────────────────────────────────────────────────────────────
+
+  const stopSeeking = useCallback(() => {
+    seekSubRef.current?.stop();
+    inviteSubRef.current?.stop();
+    seekSubRef.current = null;
+    inviteSubRef.current = null;
+    if (seekEventIdRef.current) {
+      cancelSeek(seekEventIdRef.current);
+      seekEventIdRef.current = null;
+    }
+    matchedRef.current = false;
+    setSeeking(false);
+  }, []);
+
+  const handleSeek = async () => {
+    setError('');
+    setSeeking(true);
+    matchedRef.current = false;
+
+    await requestNotifyPermission();
+
+    let seekId: string;
+    try {
+      seekId = await publishSeek();
+      seekEventIdRef.current = seekId;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to publish seek');
+      setSeeking(false);
+      return;
+    }
+
+    // When someone invites us (they are P1, we are P2) — auto-join their game.
+    inviteSubRef.current = subscribeToInvites(myPubkey, async (joinCode, _inviterPubkey) => {
+      if (matchedRef.current) return;
+      matchedRef.current = true;
+      stopSeeking();
+      await doJoin(joinCode);
+    });
+
+    // When we see another seeker: lower pubkey becomes P1 and creates the game.
+    seekSubRef.current = subscribeToSeeks(myPubkey, async (opponentPubkey) => {
+      if (matchedRef.current) return;
+      if (myPubkey > opponentPubkey) return; // they will invite us — wait
+      matchedRef.current = true;
+      stopSeeking();
+      await doCreate(opponentPubkey);
+    });
+  };
+
+  // Shared helpers used by both manual lobby and matchmaking.
+
+  const doCreate = async (opponentPubkey: string) => {
+    const gameId = crypto.randomUUID();
+    const initial = createInitialState();
+    const code = `${gameId}:${npubFromPubkey(myPubkey)}`;
+
+    addSubscription(gameId, 1, opponentPubkey);
+    try {
+      const eventId = await publishMove({
+        gameId,
+        p1Pubkey: myPubkey,
+        p2Pubkey: opponentPubkey,
+        myPlayer: 1,
+        prevEventId: null,
+        state: initial,
+      });
+      await publishInvite(opponentPubkey, gameId, code);
+
+      const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: 1, lastEventId: eventId, joinCode: code };
+      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial } }));
+      savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: 1, joinCode: code, lastMoveAt: Date.now() });
+      setActiveGameId(gameId);
+      setPhase('playing');
+    } catch (e) {
+      subsRef.current.get(gameId)?.stop();
+      subsRef.current.delete(gameId);
+      setError(e instanceof Error ? e.message : 'Failed to create game');
+    }
+  };
+
+  const doJoin = async (joinCodeStr: string) => {
+    const colonIdx = joinCodeStr.indexOf(':');
+    if (colonIdx === -1) { setError('Invalid join code received'); return; }
+    const gameId   = joinCodeStr.slice(0, colonIdx).trim();
+    const p1NpubRaw = joinCodeStr.slice(colonIdx + 1).trim();
+
+    if (games[gameId]) { setActiveGameId(gameId); setPhase('playing'); return; }
+
+    let p1Pubkey: string;
+    try { p1Pubkey = pubkeyFromNpub(p1NpubRaw); }
+    catch { setError('Received malformed join code'); return; }
+
+    addSubscription(gameId, 2, p1Pubkey);
+    const session: Session = { myPubkey, opponentPubkey: p1Pubkey, gameId, myPlayer: 2, lastEventId: null, joinCode: joinCodeStr };
+    setGames(prev => ({ ...prev, [gameId]: { session, gameState: createInitialState() } }));
+    savedSessions.upsert({ gameId, myPubkey, opponentPubkey: p1Pubkey, myPlayer: 2, joinCode: joinCodeStr, lastMoveAt: Date.now() });
+    setActiveGameId(gameId);
+    setPhase('playing');
+  };
+
   // ── Connect handlers ────────────────────────────────────────────────────────
 
   const handleConnect = async (withExtension: boolean) => {
@@ -207,72 +324,23 @@ export default function App() {
       setError('Invalid npub — paste your opponent\'s npub1… identifier.');
       return;
     }
-
-    const gameId = crypto.randomUUID();
-    const initial = createInitialState();
-    const code = `${gameId}:${npubFromPubkey(myPubkey)}`;
-
     await requestNotifyPermission();
-    addSubscription(gameId, 1, opponentPubkey);
-
-    try {
-      const eventId = await publishMove({
-        gameId,
-        p1Pubkey: myPubkey,
-        p2Pubkey: opponentPubkey,
-        myPlayer: 1,
-        prevEventId: null,
-        state: initial,
-      });
-
-      const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: 1, lastEventId: eventId, joinCode: code };
-      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial } }));
-      savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: 1, joinCode: code, lastMoveAt: Date.now() });
-      setOpponentInput('');
-      setActiveGameId(gameId);
-      setPhase('playing');
-    } catch (e) {
-      subsRef.current.get(gameId)?.stop();
-      subsRef.current.delete(gameId);
-      setError(e instanceof Error ? e.message : 'Failed to create game');
-    }
+    setOpponentInput('');
+    await doCreate(opponentPubkey);
   };
 
   // ── Join game ───────────────────────────────────────────────────────────────
 
   const handleJoin = async () => {
     setError('');
-    const colonIdx = joinCodeInput.indexOf(':');
-    if (colonIdx === -1) {
+    if (!joinCodeInput.includes(':')) {
       setError('Invalid join code — expected format: <game-id>:<p1npub>');
       return;
     }
-    const gameId = joinCodeInput.slice(0, colonIdx).trim();
-    const p1NpubRaw = joinCodeInput.slice(colonIdx + 1).trim();
-
-    if (games[gameId]) {
-      setActiveGameId(gameId);
-      setPhase('playing');
-      return;
-    }
-
-    let p1Pubkey: string;
-    try {
-      p1Pubkey = pubkeyFromNpub(p1NpubRaw);
-    } catch {
-      setError('Invalid join code — the npub part is malformed.');
-      return;
-    }
-
     await requestNotifyPermission();
-    addSubscription(gameId, 2, p1Pubkey);
-
-    const session: Session = { myPubkey, opponentPubkey: p1Pubkey, gameId, myPlayer: 2, lastEventId: null, joinCode: joinCodeInput.trim() };
-    setGames(prev => ({ ...prev, [gameId]: { session, gameState: createInitialState() } }));
-    savedSessions.upsert({ gameId, myPubkey, opponentPubkey: p1Pubkey, myPlayer: 2, joinCode: joinCodeInput.trim(), lastMoveAt: Date.now() });
+    const code = joinCodeInput.trim();
     setJoinCodeInput('');
-    setActiveGameId(gameId);
-    setPhase('playing');
+    await doJoin(code);
   };
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -286,6 +354,7 @@ export default function App() {
   const handleBackToLobby = () => {
     setActiveGameId(null);
     setError('');
+    stopSeeking();
     setPhase('lobby');
   };
 
@@ -573,6 +642,22 @@ export default function App() {
               })}
             </div>
           )}
+
+          {/* Matchmaking */}
+          <div className="seek-section">
+            {seeking ? (
+              <div className="seeking-status">
+                <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+                <span>Searching for opponent…</span>
+                <button className="btn btn-small btn-ghost" onClick={stopSeeking}>Cancel</button>
+              </div>
+            ) : (
+              <button className="btn btn-secondary" onClick={handleSeek}>
+                Find random opponent
+                <span className="btn-sub">match with another seeker on Nostr</span>
+              </button>
+            )}
+          </div>
 
           <div className="tabs">
             <button className={`tab ${lobbyTab === 'create' ? 'active' : ''}`} onClick={() => setLobbyTab('create')}>

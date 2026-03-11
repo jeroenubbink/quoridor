@@ -241,6 +241,104 @@ export async function publishMove(opts: PublishOpts): Promise<string> {
   return event.id;
 }
 
+// ─── Matchmaking ──────────────────────────────────────────────────────────────
+
+/** How long a seek event is considered fresh. */
+export const SEEK_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
+
+/** Publish a "looking for game" replaceable event. Returns the event id. */
+export async function publishSeek(): Promise<string> {
+  const ndk = getNdk();
+  const event = new NDKEvent(ndk);
+  event.kind = GAME_KIND;
+  event.tags = [
+    ['d', 'quoridor-seek'],
+    ['t', 'quoridor'],
+    ['t', 'quoridor-seek'],
+  ];
+  event.content = '';
+  const relays = await event.publish();
+  if (relays.size === 0) throw new Error('Seek not accepted by any relay');
+  return event.id;
+}
+
+/** NIP-09 delete the seek event so other clients see it's gone. Best-effort. */
+export async function cancelSeek(seekEventId: string): Promise<void> {
+  const ndk = getNdk();
+  const del = new NDKEvent(ndk);
+  del.kind = 5;
+  del.tags = [['e', seekEventId]];
+  del.content = 'seek cancelled';
+  await del.publish().catch(() => {});
+}
+
+/**
+ * Subscribe to seeks from other players. Only yields events fresher than
+ * SEEK_EXPIRY_MS. Excludes your own pubkey.
+ */
+export function subscribeToSeeks(
+  excludePubkey: string,
+  onSeek: (pubkey: string) => void,
+): NDKSubscription {
+  const ndk = getNdk();
+  const since = Math.floor((Date.now() - SEEK_EXPIRY_MS) / 1000);
+  const sub = ndk.subscribe(
+    { kinds: [GAME_KIND as number], '#t': ['quoridor-seek'], since },
+    { closeOnEose: false, groupable: false },
+  );
+  sub.on('event', (ev: NDKEvent) => {
+    if (ev.pubkey === excludePubkey) return;
+    const age = Date.now() - (ev.created_at ?? 0) * 1000;
+    if (age > SEEK_EXPIRY_MS) return;
+    onSeek(ev.pubkey);
+  });
+  return sub;
+}
+
+/**
+ * Publish a game invite to a specific seeker. The join code is public — the
+ * game content itself is NIP-44 encrypted so this is safe.
+ */
+export async function publishInvite(
+  seekerPubkey: string,
+  gameId: string,
+  joinCode: string,
+): Promise<void> {
+  const ndk = getNdk();
+  const event = new NDKEvent(ndk);
+  event.kind = GAME_KIND;
+  event.tags = [
+    ['d', `quoridor-invite-${gameId}`],
+    ['t', 'quoridor'],
+    ['t', 'quoridor-invite'],
+    ['p', seekerPubkey],
+  ];
+  event.content = joinCode;
+  await event.publish();
+}
+
+/** Subscribe to game invites addressed to myPubkey. */
+export function subscribeToInvites(
+  myPubkey: string,
+  onInvite: (joinCode: string, inviterPubkey: string) => void,
+): NDKSubscription {
+  const ndk = getNdk();
+  const since = Math.floor((Date.now() - 60_000) / 1000); // last 60s only
+  const sub = ndk.subscribe(
+    {
+      kinds: [GAME_KIND as number],
+      '#t': ['quoridor-invite'],
+      '#p': [myPubkey],
+      since,
+    },
+    { closeOnEose: false, groupable: false },
+  );
+  sub.on('event', (ev: NDKEvent) => {
+    if (ev.content) onInvite(ev.content, ev.pubkey);
+  });
+  return sub;
+}
+
 // ─── Subscribe ────────────────────────────────────────────────────────────────
 
 /**
