@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Board background -->
+  <rect width="32" height="32" rx="3" fill="#b8832a"/>
+
+  <!-- 3×3 grid of parchment squares (8px cells, 2px gaps) -->
+  <rect x="2"  y="2"  width="8" height="8" fill="#f0d878"/>
+  <rect x="12" y="2"  width="8" height="8" fill="#f0d878"/>
+  <rect x="22" y="2"  width="8" height="8" fill="#f0d878"/>
+  <rect x="2"  y="12" width="8" height="8" fill="#f0d878"/>
+  <rect x="12" y="12" width="8" height="8" fill="#f0d878"/>
+  <rect x="22" y="12" width="8" height="8" fill="#f0d878"/>
+  <rect x="2"  y="22" width="8" height="8" fill="#f0d878"/>
+  <rect x="12" y="22" width="8" height="8" fill="#f0d878"/>
+  <rect x="22" y="22" width="8" height="8" fill="#f0d878"/>
+
+  <!-- Placed wall: spans 2 rows between col 1 and col 2 -->
+  <rect x="10" y="2" width="2" height="18" fill="#1a0804"/>
+
+  <!-- Red pawn (top-right) -->
+  <circle cx="26" cy="6" r="3.5">
+    <radialGradient id="r" cx="38%" cy="34%" r="60%">
+      <stop offset="0%" stop-color="#ff9999"/>
+      <stop offset="100%" stop-color="#cc1111"/>
+    </radialGradient>
+  </circle>
+  <circle cx="26" cy="6" r="3.5" fill="url(#r)"/>
+
+  <!-- Blue pawn (bottom-left) -->
+  <circle cx="6" cy="26" r="3.5">
+    <radialGradient id="b" cx="38%" cy="34%" r="60%">
+      <stop offset="0%" stop-color="#9999ff"/>
+      <stop offset="100%" stop-color="#1122cc"/>
+    </radialGradient>
+  </circle>
+  <circle cx="6" cy="26" r="3.5" fill="url(#b)"/>
+
+  <defs>
+    <radialGradient id="r" cx="38%" cy="34%" r="60%">
+      <stop offset="0%" stop-color="#ff9999"/>
+      <stop offset="100%" stop-color="#cc1111"/>
+    </radialGradient>
+    <radialGradient id="b" cx="38%" cy="34%" r="60%">
+      <stop offset="0%" stop-color="#9999ff"/>
+      <stop offset="100%" stop-color="#1122cc"/>
+    </radialGradient>
+  </defs>
+</svg>
