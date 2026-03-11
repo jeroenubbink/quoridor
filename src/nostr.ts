@@ -4,7 +4,6 @@ import NDK, {
   NDKEvent,
   NDKUser,
   NDKSubscription,
-  NDKRelaySet,
   type NDKFilter,
 } from '@nostr-dev-kit/ndk';
 import { nip19 } from 'nostr-tools';
@@ -169,38 +168,59 @@ export async function searchProfiles(
   query: string,
   limit = 8,
 ): Promise<ProfileSearchResult[]> {
-  const ndk = getNdk();
+  // Open a raw WebSocket to relay.nostr.band (NIP-50 search relay).
+  // This bypasses NDK's relay routing entirely, which avoids any issues
+  // with connection state or relay set handling.
+  return new Promise(resolve => {
+    const results: ProfileSearchResult[] = [];
+    let done = false;
 
-  // relay.nostr.band supports NIP-50 and is already connected from bootstrap —
-  // use its existing pool instance so no new WebSocket is opened.
-  const bandRelay = ndk.pool.getRelay('wss://relay.nostr.band', false, false);
-  const relaySet = bandRelay
-    ? new NDKRelaySet(new Set([bandRelay]), ndk)
-    : undefined;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { ws.close(); } catch { /* ignore */ }
+      resolve(results);
+    };
 
-  // Race against a 6s timeout so the UI never hangs.
-  const events = await Promise.race([
-    ndk.fetchEvents(
-      { kinds: [0], search: query, limit } as NDKFilter,
-      { groupable: false, closeOnEose: true },
-      relaySet,
-    ),
-    new Promise<Set<NDKEvent>>(resolve => setTimeout(() => resolve(new Set()), 6000)),
-  ]);
+    const timer = setTimeout(finish, 6000);
 
-  const results: ProfileSearchResult[] = [];
-  for (const ev of events) {
+    let ws: WebSocket;
     try {
-      const p = JSON.parse(ev.content);
-      results.push({
-        pubkey: ev.pubkey,
-        displayName: p.display_name?.trim() || p.name?.trim() || null,
-        picture: p.picture?.trim() || p.image?.trim() || null,
-        nip05: p.nip05?.trim() || null,
-      });
-    } catch { /* malformed kind-0 */ }
-  }
-  return results;
+      ws = new WebSocket('wss://relay.nostr.band');
+    } catch {
+      clearTimeout(timer);
+      resolve([]);
+      return;
+    }
+
+    const subId = Math.random().toString(36).slice(2, 10);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify(['REQ', subId, { kinds: [0], search: query, limit }]));
+    };
+
+    ws.onmessage = (e: MessageEvent) => {
+      try {
+        const msg = JSON.parse(e.data as string) as unknown[];
+        if (msg[0] === 'EVENT' && msg[1] === subId) {
+          const ev = msg[2] as { pubkey: string; content: string };
+          const p = JSON.parse(ev.content) as Record<string, string>;
+          results.push({
+            pubkey: ev.pubkey,
+            displayName: p.display_name?.trim() || p.name?.trim() || null,
+            picture: p.picture?.trim() || p.image?.trim() || null,
+            nip05: p.nip05?.trim() || null,
+          });
+        } else if (msg[0] === 'EOSE' && msg[1] === subId) {
+          finish();
+        }
+      } catch { /* malformed message */ }
+    };
+
+    ws.onerror = () => finish();
+    ws.onclose = () => finish();
+  });
 }
 
 // ─── User profiles ────────────────────────────────────────────────────────────
