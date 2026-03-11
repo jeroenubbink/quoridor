@@ -248,32 +248,38 @@ export default function App() {
       if (myPubkey > opponentPubkey) return; // they will invite us — wait
       matchedRef.current = true;
       stopSeeking();
-      await doCreate(opponentPubkey);
+      await doCreate(opponentPubkey, 1); // creator moves first for random games
     });
   };
 
   // Shared helpers used by both manual lobby and matchmaking.
 
-  const doCreate = async (opponentPubkey: string) => {
+  // creatorPlayer = 1 for random-seek games (creator moves first),
+  //               = 2 for manual invites (invitee moves first).
+  const doCreate = async (opponentPubkey: string, creatorPlayer: 1 | 2 = 2) => {
     const gameId = crypto.randomUUID();
     const initial = createInitialState();
-    const code = `${gameId}:${npubFromPubkey(myPubkey)}`;
+    // Encode creator's player number so the joiner can derive theirs.
+    const code = `${gameId}:${npubFromPubkey(myPubkey)}:${creatorPlayer}`;
 
-    addSubscription(gameId, 1, opponentPubkey);
+    const p1Pubkey = creatorPlayer === 1 ? myPubkey : opponentPubkey;
+    const p2Pubkey = creatorPlayer === 1 ? opponentPubkey : myPubkey;
+
+    addSubscription(gameId, creatorPlayer, opponentPubkey);
     try {
       const eventId = await publishMove({
         gameId,
-        p1Pubkey: myPubkey,
-        p2Pubkey: opponentPubkey,
-        myPlayer: 1,
+        p1Pubkey,
+        p2Pubkey,
+        myPlayer: creatorPlayer,
         prevEventId: null,
         state: initial,
       });
       await publishInvite(opponentPubkey, gameId, code);
 
-      const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: 1, lastEventId: eventId, joinCode: code };
+      const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: creatorPlayer, lastEventId: eventId, joinCode: code };
       setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false } }));
-      savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: 1, joinCode: code, lastMoveAt: Date.now() });
+      savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: creatorPlayer, joinCode: code, lastMoveAt: Date.now() });
       setActiveGameId(gameId);
       setPhase('playing');
     } catch (e) {
@@ -284,21 +290,24 @@ export default function App() {
   };
 
   const doJoin = async (joinCodeStr: string) => {
-    const colonIdx = joinCodeStr.indexOf(':');
-    if (colonIdx === -1) { setError('Invalid join code received'); return; }
-    const gameId   = joinCodeStr.slice(0, colonIdx).trim();
-    const p1NpubRaw = joinCodeStr.slice(colonIdx + 1).trim();
+    const parts = joinCodeStr.split(':');
+    if (parts.length < 2) { setError('Invalid join code received'); return; }
+    const gameId = parts[0].trim();
+    const creatorNpubRaw = parts[1].trim();
+    // Third segment is creator's player number; default to 1 for old codes.
+    const creatorPlayer = parts[2] === '2' ? 2 : 1;
+    const myPlayer = (3 - creatorPlayer) as 1 | 2;
 
     if (games[gameId]) { setActiveGameId(gameId); setPhase('playing'); return; }
 
-    let p1Pubkey: string;
-    try { p1Pubkey = pubkeyFromNpub(p1NpubRaw); }
+    let creatorPubkey: string;
+    try { creatorPubkey = pubkeyFromNpub(creatorNpubRaw); }
     catch { setError('Received malformed join code'); return; }
 
-    addSubscription(gameId, 2, p1Pubkey);
-    const session: Session = { myPubkey, opponentPubkey: p1Pubkey, gameId, myPlayer: 2, lastEventId: null, joinCode: joinCodeStr };
+    addSubscription(gameId, myPlayer, creatorPubkey);
+    const session: Session = { myPubkey, opponentPubkey: creatorPubkey, gameId, myPlayer, lastEventId: null, joinCode: joinCodeStr };
     setGames(prev => ({ ...prev, [gameId]: { session, gameState: createInitialState(), opponentSeen: false } }));
-    savedSessions.upsert({ gameId, myPubkey, opponentPubkey: p1Pubkey, myPlayer: 2, joinCode: joinCodeStr, lastMoveAt: Date.now() });
+    savedSessions.upsert({ gameId, myPubkey, opponentPubkey: creatorPubkey, myPlayer, joinCode: joinCodeStr, lastMoveAt: Date.now() });
     setActiveGameId(gameId);
     setPhase('playing');
   };
@@ -341,7 +350,7 @@ export default function App() {
     await requestNotifyPermission();
     const pubkey = selectedOpponentPubkey;
     setSelectedOpponentPubkey(null);
-    await doCreate(pubkey);
+    await doCreate(pubkey, 2); // invitee moves first
   };
 
   // ── Join game ───────────────────────────────────────────────────────────────
@@ -349,7 +358,7 @@ export default function App() {
   const handleJoin = async () => {
     setError('');
     if (!joinCodeInput.includes(':')) {
-      setError('Invalid join code — expected format: <game-id>:<p1npub>');
+      setError('Invalid join code');
       return;
     }
     await requestNotifyPermission();
@@ -723,7 +732,7 @@ export default function App() {
               <label className="form-label">Join code</label>
               <input
                 className="form-input"
-                placeholder="<game-id>:<p1npub>"
+                placeholder="Paste join code…"
                 value={joinCodeInput}
                 onChange={e => setJoinCodeInput(e.target.value)}
               />
