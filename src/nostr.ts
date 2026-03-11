@@ -265,6 +265,31 @@ export interface UserProfile {
 
 const profileCache = new Map<string, UserProfile>();
 
+/**
+ * Verify NIP-05 by fetching /.well-known/nostr.json through a CORS proxy,
+ * since most domains don't set CORS headers on that endpoint.
+ * Falls back to an unverified state on any error.
+ */
+async function verifyNip05(nip05: string, pubkey: string): Promise<boolean> {
+  const at = nip05.indexOf('@');
+  if (at === -1) return false;
+  const name = nip05.slice(0, at);
+  const domain = nip05.slice(at + 1);
+  if (!name || !domain) return false;
+
+  const target = `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`;
+  const proxied = `https://corsproxy.io/?${encodeURIComponent(target)}`;
+
+  try {
+    const res = await fetch(proxied, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return false;
+    const data = await res.json() as { names?: Record<string, string> };
+    return data?.names?.[name] === pubkey;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchUserProfile(pubkey: string): Promise<UserProfile> {
   if (profileCache.has(pubkey)) return profileCache.get(pubkey)!;
 
@@ -279,11 +304,7 @@ export async function fetchUserProfile(pubkey: string): Promise<UserProfile> {
 
   let nip05Valid = false;
   if (nip05) {
-    try {
-      nip05Valid = (await user.validateNip05(nip05)) ?? false;
-    } catch {
-      // CORS or network failure — leave unverified
-    }
+    nip05Valid = await verifyNip05(nip05, pubkey);
   }
 
   const result: UserProfile = { displayName, picture, nip05, nip05Valid };
