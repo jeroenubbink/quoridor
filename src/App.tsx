@@ -26,6 +26,7 @@ import {
   subscribeToInvites,
 } from './nostr';
 import { UserCard } from './UserCard';
+import { PlayerSearch } from './PlayerSearch';
 import { savedKey, savedSessions } from './storage';
 import type { NDKSubscription } from '@nostr-dev-kit/ndk';
 
@@ -92,7 +93,7 @@ export default function App() {
   // ── Lobby form state ────────────────────────────────────────────────────────
 
   const [lobbyTab, setLobbyTab] = useState<'create' | 'join'>('create');
-  const [opponentInput, setOpponentInput] = useState('');
+  const [selectedOpponentPubkey, setSelectedOpponentPubkey] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [confirmAbandon, setConfirmAbandon] = useState<string | null>(null); // gameId pending confirm
 
@@ -333,16 +334,14 @@ export default function App() {
 
   const handleCreate = async () => {
     setError('');
-    let opponentPubkey: string;
-    try {
-      opponentPubkey = pubkeyFromNpub(opponentInput.trim());
-    } catch {
-      setError('Invalid npub — paste your opponent\'s npub1… identifier.');
+    if (!selectedOpponentPubkey) {
+      setError('Search for an opponent first.');
       return;
     }
     await requestNotifyPermission();
-    setOpponentInput('');
-    await doCreate(opponentPubkey);
+    const pubkey = selectedOpponentPubkey;
+    setSelectedOpponentPubkey(null);
+    await doCreate(pubkey);
   };
 
   // ── Join game ───────────────────────────────────────────────────────────────
@@ -707,12 +706,11 @@ export default function App() {
 
           {lobbyTab === 'create' && (
             <div className="lobby-form">
-              <label className="form-label">Opponent's npub</label>
-              <input
-                className="form-input"
-                placeholder="npub1…"
-                value={opponentInput}
-                onChange={e => setOpponentInput(e.target.value)}
+              <label className="form-label">Opponent</label>
+              <PlayerSearch
+                selectedPubkey={selectedOpponentPubkey}
+                onSelect={setSelectedOpponentPubkey}
+                onClear={() => setSelectedOpponentPubkey(null)}
               />
               <button className="btn btn-primary" onClick={handleCreate}>
                 Create game

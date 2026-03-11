@@ -389,6 +389,125 @@
   flex-shrink: 0;
 }
 
+/* ── Player search ───────────────────────────────────────────────────────── */
+
+.player-search {
+  position: relative;
+  width: 100%;
+}
+
+.search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.search-input-row .form-input {
+  flex: 1;
+}
+
+.search-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #3a3020;
+  border-top-color: #d4a843;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #242010;
+  border: 1px solid #5a4830;
+  border-radius: 6px;
+  z-index: 100;
+  overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #3a3020;
+  cursor: pointer;
+  text-align: left;
+  color: #e8d8b0;
+}
+
+.search-result:last-child { border-bottom: none; }
+.search-result:hover { background: #2e2820; }
+
+.search-result-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.search-result-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-nip05 {
+  font-size: 0.72rem;
+  color: #a89060;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-selected {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #2e2820;
+  border: 1px solid #5a4830;
+  border-radius: 5px;
+  padding: 0.45rem 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.search-selected-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-selected-nip05 {
+  font-size: 0.72rem;
+  color: #a89060;
+  white-space: nowrap;
+}
+
+.search-clear {
+  background: none;
+  border: none;
+  color: #a89060;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.search-clear:hover { color: #e8d8b0; }
+
 /* ── Playing screen ──────────────────────────────────────────────────────── */
 
 .playing-screen {

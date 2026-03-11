@@ -4,6 +4,7 @@ import NDK, {
   NDKEvent,
   NDKUser,
   NDKSubscription,
+  NDKRelaySet,
   type NDKFilter,
 } from '@nostr-dev-kit/ndk';
 import { nip19 } from 'nostr-tools';
@@ -153,6 +154,52 @@ export async function publishProfile(displayName: string): Promise<void> {
   event.kind = 0;
   event.content = JSON.stringify({ name: displayName, display_name: displayName });
   await event.publish();
+}
+
+// ─── Profile search ───────────────────────────────────────────────────────────
+
+// Relays that support NIP-50 full-text search on kind-0 events.
+// relay.nostr.band is already a bootstrap relay; the others are added only for
+// search queries so they don't affect the main event routing.
+const SEARCH_RELAY_URLS = [
+  'wss://relay.nostr.band',
+  'wss://nostr.wine',
+  'wss://search.nos.lol',
+] as const;
+
+export interface ProfileSearchResult {
+  pubkey: string;
+  displayName: string | null;
+  picture: string | null;
+  nip05: string | null;
+}
+
+export async function searchProfiles(
+  query: string,
+  limit = 8,
+): Promise<ProfileSearchResult[]> {
+  const ndk = getNdk();
+  const relaySet = NDKRelaySet.fromRelayUrls(SEARCH_RELAY_URLS, ndk);
+
+  const events = await ndk.fetchEvents(
+    { kinds: [0], search: query, limit } as NDKFilter,
+    { groupable: false },
+    relaySet,
+  );
+
+  const results: ProfileSearchResult[] = [];
+  for (const ev of events) {
+    try {
+      const p = JSON.parse(ev.content);
+      results.push({
+        pubkey: ev.pubkey,
+        displayName: p.display_name?.trim() || p.name?.trim() || null,
+        picture: p.picture?.trim() || p.image?.trim() || null,
+        nip05: p.nip05?.trim() || null,
+      });
+    } catch { /* malformed kind-0 */ }
+  }
+  return results;
 }
 
 // ─── User profiles ────────────────────────────────────────────────────────────
