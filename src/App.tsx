@@ -15,10 +15,10 @@ import {
   fetchLatestGameState,
   pubkeyFromNpub,
   npubFromPubkey,
-  shortenNpub,
   publishMove,
   subscribeToGame,
 } from './nostr';
+import { UserCard } from './UserCard';
 import { savedKey, savedSessions } from './storage';
 import type { NDKSubscription } from '@nostr-dev-kit/ndk';
 
@@ -525,12 +525,12 @@ export default function App() {
       {phase === 'lobby' && (
         <div className="screen lobby-screen">
           <div className="identity-line">
-            <span className="identity-label">Your npub</span>
-            <code className="npub npub-full">{npubFromPubkey(myPubkey)}</code>
+            <UserCard pubkey={myPubkey} size="lg" label="You" />
             <button
               className="btn btn-small btn-ghost"
+              style={{ marginTop: '0.25rem' }}
               onClick={() => navigator.clipboard.writeText(npubFromPubkey(myPubkey))}
-            >Copy</button>
+            >Copy npub</button>
           </div>
 
           {/* Active games list */}
@@ -547,9 +547,7 @@ export default function App() {
                           ? (gameState.winner === session.myPlayer ? 'You won' : 'You lost')
                           : isMyTurn ? 'Your turn' : 'Waiting'}
                       </span>
-                      <code className="npub" style={{ fontSize: '0.75rem' }}>
-                        vs {shortenNpub(npubFromPubkey(session.opponentPubkey))}
-                      </code>
+                      <UserCard pubkey={session.opponentPubkey} size="sm" label="vs" />
                     </div>
                     <div className="game-list-actions">
                       <button className="btn btn-small btn-primary" onClick={() => handleEnterGame(session.gameId)}>
@@ -635,13 +633,22 @@ export default function App() {
                 <span className="waiting">Waiting for opponent…</span>
               )}
             </div>
+            <div className="game-players">
+              <UserCard
+                pubkey={activeEntry.session.myPlayer === 1 ? activeEntry.session.myPubkey : activeEntry.session.opponentPubkey}
+                size="md"
+                label={`P1${activeEntry.session.myPlayer === 1 ? ' (you)' : ''}`}
+                playerColor={1}
+              />
+              <span className="game-vs">vs</span>
+              <UserCard
+                pubkey={activeEntry.session.myPlayer === 2 ? activeEntry.session.myPubkey : activeEntry.session.opponentPubkey}
+                size="md"
+                label={`P2${activeEntry.session.myPlayer === 2 ? ' (you)' : ''}`}
+                playerColor={2}
+              />
+            </div>
             <div className="game-meta">
-              <span className="meta-item">
-                You: <span className={`p${activeEntry.session.myPlayer}-color`}>P{activeEntry.session.myPlayer}</span>
-              </span>
-              <span className="meta-item">
-                vs <code className="npub">{shortenNpub(npubFromPubkey(activeEntry.session.opponentPubkey))}</code>
-              </span>
               <button className="btn btn-small btn-ghost" onClick={handleBackToLobby}>← Games</button>
               {!activeEntry.gameState.winner && (
                 confirmAbandon === activeGameId ? (

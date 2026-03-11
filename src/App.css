@@ -389,6 +389,89 @@
   gap: 0.3em;
 }
 
+/* ── User card ───────────────────────────────────────────────────────────── */
+
+.user-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.user-card-label {
+  font-size: 0.72rem;
+  color: #a89060;
+  line-height: 1;
+}
+
+.user-card-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e8d8b0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-card-lg .user-card-name { font-size: 1rem; }
+
+.user-nip05 {
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nip05-valid     { color: #6dbf6d; }
+.nip05-unverified { color: #a89060; }
+
+.user-npub {
+  font-size: 0.62rem;
+  color: #7a6040;
+  word-break: break-all;
+  white-space: normal;
+  line-height: 1.4;
+  font-family: monospace;
+}
+
+/* Avatar */
+
+.avatar-img {
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.avatar-fallback {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── Player cards in playing screen ──────────────────────────────────────── */
+
+.game-players {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.game-vs {
+  font-size: 0.8rem;
+  color: #a89060;
+}
+
 /* ── Shared identity ─────────────────────────────────────────────────────── */
 
 .npub {

@@ -144,6 +144,43 @@ export async function fetchLatestGameState(
   };
 }
 
+// ─── User profiles ────────────────────────────────────────────────────────────
+
+export interface UserProfile {
+  displayName: string | null; // display_name → name fallback
+  picture: string | null;
+  nip05: string | null;
+  nip05Valid: boolean;
+}
+
+const profileCache = new Map<string, UserProfile>();
+
+export async function fetchUserProfile(pubkey: string): Promise<UserProfile> {
+  if (profileCache.has(pubkey)) return profileCache.get(pubkey)!;
+
+  const ndk = getNdk();
+  const user = ndk.getUser({ pubkey });
+  await user.fetchProfile();
+
+  const p = user.profile;
+  const displayName = p?.displayName?.trim() || p?.name?.trim() || null;
+  const picture = p?.picture?.trim() || p?.image?.trim() || null;
+  const nip05 = p?.nip05?.trim() || null;
+
+  let nip05Valid = false;
+  if (nip05) {
+    try {
+      nip05Valid = (await user.validateNip05(nip05)) ?? false;
+    } catch {
+      // CORS or network failure — leave unverified
+    }
+  }
+
+  const result: UserProfile = { displayName, picture, nip05, nip05Valid };
+  profileCache.set(pubkey, result);
+  return result;
+}
+
 // ─── Identity helpers ─────────────────────────────────────────────────────────
 
 export function pubkeyFromNpub(npub: string): string {
