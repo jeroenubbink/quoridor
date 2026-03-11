@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { uniqueNamesGenerator, adjectives, colors, animals } from 'unique-names-generator';
 import './App.css';
 import { GameBoard } from './GameBoard';
 import {
@@ -16,6 +17,7 @@ import {
   pubkeyFromNpub,
   npubFromPubkey,
   publishMove,
+  publishProfile,
   subscribeToGame,
   publishSeek,
   cancelSeek,
@@ -57,6 +59,14 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('disconnected');
   const [error, setError] = useState('');
   const [myPubkey, setMyPubkey] = useState('');
+  const [isAnonymous, setIsAnonymous] = useState(false);
+
+  const makeFunnyName = () => uniqueNamesGenerator({
+    dictionaries: [adjectives, colors, animals],
+    style: 'capital',
+    separator: '',
+  });
+  const [anonName, setAnonName] = useState(makeFunnyName);
 
   // All active games, keyed by gameId.
   const [games, setGames] = useState<Record<string, GameEntry>>({});
@@ -293,7 +303,7 @@ export default function App() {
 
   // ── Connect handlers ────────────────────────────────────────────────────────
 
-  const handleConnect = async (withExtension: boolean) => {
+  const handleConnect = async (withExtension: boolean, displayName?: string) => {
     setPhase('connecting');
     setError('');
     try {
@@ -301,10 +311,15 @@ export default function App() {
         const pubkey = await connectWithExtension();
         savedKey.save({ type: 'extension' });
         setMyPubkey(pubkey);
+        setIsAnonymous(false);
       } else {
         const { pubkey, nsecHex } = await connectWithTempKey();
-        savedKey.save({ type: 'ephemeral', nsecHex });
+        savedKey.save({ type: 'ephemeral', nsecHex, displayName });
         setMyPubkey(pubkey);
+        setIsAnonymous(true);
+        if (displayName) {
+          publishProfile(displayName).catch(() => {}); // best-effort; don't block
+        }
       }
       setPhase('lobby');
     } catch (e) {
@@ -468,9 +483,11 @@ export default function App() {
       let pubkey: string;
       if (sk.type === 'extension') {
         pubkey = await connectWithExtension();
+        setIsAnonymous(false);
       } else {
         if (!sk.nsecHex) throw new Error('Saved ephemeral key is missing');
         pubkey = await connectWithSavedKey(sk.nsecHex);
+        setIsAnonymous(true);
       }
       setMyPubkey(pubkey);
 
@@ -574,10 +591,27 @@ export default function App() {
               Connect with extension
               <span className="btn-sub">NIP-07 (Alby, nos2x…)</span>
             </button>
-            <button className="btn btn-secondary" onClick={() => handleConnect(false)}>
-              Use temporary key
-              <span className="btn-sub">ephemeral identity</span>
-            </button>
+
+            <div className="anon-section">
+              <p className="anon-label">— or play anonymous —</p>
+              <div className="anon-name-row">
+                <input
+                  className="form-input"
+                  value={anonName}
+                  onChange={e => setAnonName(e.target.value)}
+                  placeholder="Your name"
+                  maxLength={40}
+                />
+                <button
+                  className="btn btn-small btn-ghost"
+                  title="Generate new name"
+                  onClick={() => setAnonName(makeFunnyName())}
+                >↺</button>
+              </div>
+              <button className="btn btn-secondary" onClick={() => handleConnect(false, anonName.trim() || undefined)}>
+                Play anonymous
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -594,12 +628,14 @@ export default function App() {
       {phase === 'lobby' && (
         <div className="screen lobby-screen">
           <div className="identity-line">
-            <UserCard pubkey={myPubkey} size="lg" label="You" />
-            <button
-              className="btn btn-small btn-ghost"
-              style={{ marginTop: '0.25rem' }}
-              onClick={() => navigator.clipboard.writeText(npubFromPubkey(myPubkey))}
-            >Copy npub</button>
+            <UserCard pubkey={myPubkey} size={isAnonymous ? 'md' : 'lg'} label="You" />
+            {!isAnonymous && (
+              <button
+                className="btn btn-small btn-ghost"
+                style={{ marginTop: '0.25rem' }}
+                onClick={() => navigator.clipboard.writeText(npubFromPubkey(myPubkey))}
+              >Copy npub</button>
+            )}
           </div>
 
           {/* Active games list */}

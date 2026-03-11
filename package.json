@@ -12,7 +12,8 @@
   "dependencies": {
     "@nostr-dev-kit/ndk": "^3.0.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "unique-names-generator": "^4.7.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",

@@ -6,7 +6,8 @@ export type SavedKeyType = 'extension' | 'ephemeral';
 
 export interface SavedKey {
   type: SavedKeyType;
-  nsecHex?: string; // only for ephemeral; stored as plaintext (acceptable for a throwaway key)
+  nsecHex?: string;     // only for ephemeral; stored as plaintext (acceptable for a throwaway key)
+  displayName?: string; // chosen name for anonymous sessions
 }
 
 export const savedKey = {

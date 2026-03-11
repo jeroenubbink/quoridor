@@ -144,6 +144,17 @@ export async function fetchLatestGameState(
   };
 }
 
+// ─── Profile publishing ───────────────────────────────────────────────────────
+
+/** Publish a minimal kind-0 set_metadata event with just a display name. */
+export async function publishProfile(displayName: string): Promise<void> {
+  const ndk = getNdk();
+  const event = new NDKEvent(ndk);
+  event.kind = 0;
+  event.content = JSON.stringify({ name: displayName, display_name: displayName });
+  await event.publish();
+}
+
 // ─── User profiles ────────────────────────────────────────────────────────────
 
 export interface UserProfile {

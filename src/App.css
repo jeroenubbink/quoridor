@@ -129,6 +129,26 @@
   width: 100%;
 }
 
+.anon-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.anon-label {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #7a6040;
+  margin: 0;
+}
+
+.anon-name-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
 /* ── Spinner ─────────────────────────────────────────────────────────────── */
 
 .spinner {
