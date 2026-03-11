@@ -601,28 +601,28 @@
   background: radial-gradient(circle at 38% 34%, #9999ff, #1122cc);
 }
 
-/* Empty wall slots — noticeably darker than squares, read as grooves */
+/* Empty wall slots — close to cell colour so placed walls pop */
 .cell.wall-v {
   width: 8px;
   height: 52px;
-  background: #8a5a10;
+  background: #dfc45a;
   cursor: pointer;
 }
-.cell.wall-v:hover { background: #5a3408; }
+.cell.wall-v:hover { background: #c8aa3a; }
 
 .cell.wall-h {
   width: 52px;
   height: 8px;
-  background: #8a5a10;
+  background: #dfc45a;
   cursor: pointer;
 }
-.cell.wall-h:hover { background: #5a3408; }
+.cell.wall-h:hover { background: #c8aa3a; }
 
 /* Corner intersections */
 .cell.corner {
   width: 8px;
   height: 8px;
-  background: #7a4e0c;
+  background: #d4b84e;
 }
 
 /* Placed walls — near-black for maximum contrast */
