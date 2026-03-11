@@ -164,13 +164,19 @@ export interface ProfileSearchResult {
   nip05: string | null;
 }
 
-export async function searchProfiles(
+// Known NIP-50 full-text search relays, tried in parallel.
+const SEARCH_RELAYS = [
+  'wss://relay.nostr.band',
+  'wss://search.nos.lol',
+  'wss://nostr.wine',
+];
+
+/** Query one relay via raw WebSocket. Resolves when EOSE or error/timeout. */
+function searchOnRelay(
+  relayUrl: string,
   query: string,
-  limit = 8,
+  limit: number,
 ): Promise<ProfileSearchResult[]> {
-  // Open a raw WebSocket to relay.nostr.band (NIP-50 search relay).
-  // This bypasses NDK's relay routing entirely, which avoids any issues
-  // with connection state or relay set handling.
   return new Promise(resolve => {
     const results: ProfileSearchResult[] = [];
     let done = false;
@@ -183,11 +189,11 @@ export async function searchProfiles(
       resolve(results);
     };
 
-    const timer = setTimeout(finish, 6000);
+    const timer = setTimeout(finish, 5000);
 
     let ws: WebSocket;
     try {
-      ws = new WebSocket('wss://relay.nostr.band');
+      ws = new WebSocket(relayUrl);
     } catch {
       clearTimeout(timer);
       resolve([]);
@@ -220,6 +226,31 @@ export async function searchProfiles(
 
     ws.onerror = () => finish();
     ws.onclose = () => finish();
+  });
+}
+
+export async function searchProfiles(
+  query: string,
+  limit = 8,
+): Promise<ProfileSearchResult[]> {
+  // Try all NIP-50 search relays in parallel; return the first non-empty result.
+  // If the user can't reach one relay they can likely reach another.
+  return new Promise(resolve => {
+    let settled = false;
+    let pending = SEARCH_RELAYS.length;
+
+    for (const url of SEARCH_RELAYS) {
+      searchOnRelay(url, query, limit).then(results => {
+        pending--;
+        if (!settled && results.length > 0) {
+          settled = true;
+          resolve(results);
+        } else if (pending === 0 && !settled) {
+          settled = true;
+          resolve([]);
+        }
+      });
+    }
   });
 }
 
