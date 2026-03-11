@@ -550,16 +550,18 @@
 
 .pip-p1     { background: #ff6b6b; }
 .pip-p2     { background: #6b8eff; }
-.pip-used   { background: #3a3020; }
+.pip-used   { background: #1e1608; }
 
 /* ── Board grid ──────────────────────────────────────────────────────────── */
 
 .board {
-  background: #c8943a;
+  background: #b8832a;          /* board padding / frame fill */
   padding: 14px;
-  border: 8px solid #7a5020;
+  border: 8px solid #52300a;    /* deep walnut frame */
   border-radius: 4px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 210, 120, 0.25); /* subtle top highlight */
   display: inline-flex;
   flex-direction: column;
 }
@@ -568,20 +570,20 @@
 
 .cell { flex-shrink: 0; position: relative; box-sizing: border-box; }
 
-/* Player squares */
+/* Player squares — bright parchment so they read clearly as "open space" */
 .cell.square {
   width: 52px;
   height: 52px;
-  background: #e8c870;
-  border: 1px solid rgba(100, 60, 0, 0.2);
+  background: #f0d878;
+  border: 1px solid rgba(0, 0, 0, 0.07); /* barely-there grid line */
   cursor: default;
 }
 
 .cell.square.hint {
-  background: #a8d880;
+  background: #9ed870;
   cursor: pointer;
 }
-.cell.square.hint:hover { background: #88cc60; }
+.cell.square.hint:hover { background: #80c850; }
 
 /* Pawns */
 .cell.square.p1::after,
@@ -599,49 +601,48 @@
   background: radial-gradient(circle at 38% 34%, #9999ff, #1122cc);
 }
 
-/* Vertical wall slot (between horizontal neighbours) */
+/* Empty wall slots — noticeably darker than squares, read as grooves */
 .cell.wall-v {
   width: 8px;
   height: 52px;
-  background: #b07830;
+  background: #8a5a10;
   cursor: pointer;
 }
-.cell.wall-v:hover { background: rgba(60, 30, 0, 0.55); }
+.cell.wall-v:hover { background: #5a3408; }
 
-/* Horizontal wall slot (between vertical neighbours) */
 .cell.wall-h {
   width: 52px;
   height: 8px;
-  background: #b07830;
+  background: #8a5a10;
   cursor: pointer;
 }
-.cell.wall-h:hover { background: rgba(60, 30, 0, 0.55); }
+.cell.wall-h:hover { background: #5a3408; }
 
 /* Corner intersections */
 .cell.corner {
   width: 8px;
   height: 8px;
-  background: #a06820;
+  background: #7a4e0c;
 }
 
-/* Placed walls */
+/* Placed walls — near-black for maximum contrast */
 .cell.wall-v.wall-placed,
 .cell.wall-h.wall-placed,
 .cell.corner.wall-placed {
-  background: #3a2010;
+  background: #1a0804;
 }
 
 /* Wall preview — valid */
 .cell.wall-preview,
 .cell.wall-preview:hover {
-  background: #88cc44;
+  background: #72c030;
   cursor: pointer;
 }
 
 /* Wall preview — invalid */
 .cell.wall-preview-bad,
 .cell.wall-preview-bad:hover {
-  background: #cc4444;
+  background: #c43030;
   cursor: not-allowed;
 }
 
