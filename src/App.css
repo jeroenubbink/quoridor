@@ -190,6 +190,11 @@
   text-decoration: underline;
 }
 
+.about-meta {
+  font-size: 0.78rem;
+  color: #6a5030;
+}
+
 .about-features {
   margin: 0;
   padding-left: 1.1rem;

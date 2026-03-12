@@ -644,6 +644,18 @@ export default function App() {
                 Full rules on Wikipedia →
               </a>
             </p>
+            <p className="about-text about-meta">
+              Open source &mdash;{' '}
+              <a
+                className="about-link"
+                href="https://github.com/jeroenubbink/quoridor"
+                target="_blank"
+                rel="noreferrer"
+              >
+                github.com/jeroenubbink/quoridor
+              </a>
+              {' '}&mdash; MIT licence
+            </p>
             <h2 className="about-title">Features</h2>
             <ul className="about-features">
               <li>Fully peer-to-peer — game state lives on Nostr relays, no server</li>
