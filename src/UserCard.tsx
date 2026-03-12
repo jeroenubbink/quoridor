@@ -7,7 +7,7 @@ export function useProfile(pubkey: string | null) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
-    if (!pubkey) return;
+    if (!pubkey) { setProfile(null); return; }
     let cancelled = false;
     fetchUserProfile(pubkey)
       .then(p => { if (!cancelled) setProfile(p); })

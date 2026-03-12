@@ -7,7 +7,7 @@ import NDK, {
   type NDKFilter,
 } from '@nostr-dev-kit/ndk';
 import { nip19 } from 'nostr-tools';
-import type { GameState } from './game';
+import { validateIncomingState, type GameState, type Player } from './game';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -171,27 +171,30 @@ const SEARCH_RELAYS = [
   'wss://nostr.wine',
 ];
 
-/** Query one relay via raw WebSocket. Resolves when EOSE or error/timeout. */
-function searchOnRelay(
-  relayUrl: string,
-  query: string,
-  limit: number,
-): Promise<ProfileSearchResult[]> {
-  return new Promise(resolve => {
-    const results: ProfileSearchResult[] = [];
-    let done = false;
+interface SearchHandle {
+  promise: Promise<ProfileSearchResult[]>;
+  cancel: () => void;
+}
 
-    const finish = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      try { ws.close(); } catch { /* ignore */ }
-      resolve(results);
-    };
+function searchOnRelay(relayUrl: string, query: string, limit: number): SearchHandle {
+  let ws: WebSocket | undefined;
+  let done = false;
+  let resolveFn!: (r: ProfileSearchResult[]) => void;
+  const results: ProfileSearchResult[] = [];
 
-    const timer = setTimeout(finish, 5000);
+  const finish = (res: ProfileSearchResult[] = results) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    try { ws?.close(); } catch { /* ignore */ }
+    resolveFn(res);
+  };
 
-    let ws: WebSocket;
+  const timer = setTimeout(() => finish(), 5000);
+
+  const promise = new Promise<ProfileSearchResult[]>(resolve => {
+    resolveFn = resolve;
+
     try {
       ws = new WebSocket(relayUrl);
     } catch {
@@ -203,7 +206,7 @@ function searchOnRelay(
     const subId = Math.random().toString(36).slice(2, 10);
 
     ws.onopen = () => {
-      ws.send(JSON.stringify(['REQ', subId, { kinds: [0], search: query, limit }]));
+      ws!.send(JSON.stringify(['REQ', subId, { kinds: [0], search: query, limit }]));
     };
 
     ws.onmessage = (e: MessageEvent) => {
@@ -227,23 +230,34 @@ function searchOnRelay(
     ws.onerror = () => finish();
     ws.onclose = () => finish();
   });
+
+  return { promise, cancel: () => finish([]) };
 }
+
+// Track in-flight search handles so we can cancel them on new searches.
+let _activeSearchHandles: SearchHandle[] = [];
 
 export async function searchProfiles(
   query: string,
   limit = 8,
 ): Promise<ProfileSearchResult[]> {
-  // Try all NIP-50 search relays in parallel; return the first non-empty result.
-  // If the user can't reach one relay they can likely reach another.
+  // Cancel any in-progress searches before starting new ones.
+  _activeSearchHandles.forEach(h => h.cancel());
+  _activeSearchHandles = [];
+
+  const handles = SEARCH_RELAYS.map(url => searchOnRelay(url, query, limit));
+  _activeSearchHandles = handles;
+
   return new Promise(resolve => {
     let settled = false;
-    let pending = SEARCH_RELAYS.length;
+    let pending = handles.length;
 
-    for (const url of SEARCH_RELAYS) {
-      searchOnRelay(url, query, limit).then(results => {
+    for (const handle of handles) {
+      handle.promise.then(results => {
         pending--;
         if (!settled && results.length > 0) {
           settled = true;
+          _activeSearchHandles = [];
           resolve(results);
         } else if (pending === 0 && !settled) {
           settled = true;
@@ -263,7 +277,8 @@ export interface UserProfile {
   nip05Valid: boolean;
 }
 
-const profileCache = new Map<string, UserProfile>();
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const profileCache = new Map<string, { profile: UserProfile; ts: number }>();
 
 /**
  * Verify NIP-05 by fetching /.well-known/nostr.json through a CORS proxy,
@@ -278,20 +293,29 @@ async function verifyNip05(nip05: string, pubkey: string): Promise<boolean> {
   if (!name || !domain) return false;
 
   const target = `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`;
-  const proxied = `https://corsproxy.io/?${encodeURIComponent(target)}`;
 
-  try {
-    const res = await fetch(proxied, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return false;
-    const data = await res.json() as { names?: Record<string, string> };
-    return data?.names?.[name] === pubkey;
-  } catch {
-    return false;
-  }
+  const tryFetch = async (url: string): Promise<boolean> => {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) return false;
+      const data = await res.json() as { names?: Record<string, string> };
+      return data?.names?.[name] === pubkey;
+    } catch {
+      return false;
+    }
+  };
+
+  // Try direct first (some domains have CORS headers), then fall back to proxy.
+  const direct = await tryFetch(target);
+  if (direct) return true;
+  return tryFetch(`https://corsproxy.io/?${encodeURIComponent(target)}`);
 }
 
 export async function fetchUserProfile(pubkey: string): Promise<UserProfile> {
-  if (profileCache.has(pubkey)) return profileCache.get(pubkey)!;
+  if (profileCache.has(pubkey)) {
+    const entry = profileCache.get(pubkey)!;
+    if (Date.now() - entry.ts < PROFILE_CACHE_TTL_MS) return entry.profile;
+  }
 
   const ndk = getNdk();
   const user = ndk.getUser({ pubkey });
@@ -308,7 +332,7 @@ export async function fetchUserProfile(pubkey: string): Promise<UserProfile> {
   }
 
   const result: UserProfile = { displayName, picture, nip05, nip05Valid };
-  profileCache.set(pubkey, result);
+  profileCache.set(pubkey, { profile: result, ts: Date.now() });
   return result;
 }
 
@@ -480,6 +504,8 @@ export function subscribeToInvites(
 export function subscribeToGame(
   gameId: string,
   opponentPubkey: string,
+  myPlayer: Player,
+  getCurrentState: () => GameState | null,
   onState: (state: GameState) => void,
 ): NDKSubscription {
   const ndk = getNdk();
@@ -503,6 +529,12 @@ export function subscribeToGame(
       // decrypt() mutates event.content from ciphertext → plaintext
       await event.decrypt(opponentUser, ndk.signer, 'nip44');
       const state = JSON.parse(event.content) as GameState;
+      const current = getCurrentState();
+      const opponentPlayer = (3 - myPlayer) as Player;
+      if (current && !validateIncomingState(current, state, opponentPlayer)) {
+        console.warn('Rejected invalid/cheated game state from opponent');
+        return;
+      }
       onState(state);
     } catch (err) {
       console.error('Failed to decrypt/parse game event:', err);

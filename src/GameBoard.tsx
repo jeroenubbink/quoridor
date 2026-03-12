@@ -119,27 +119,41 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
 
       {/* onMouseLeave on board clears preview; squares clear it on enter.
           Corners have no handler so crossing them doesn't flicker the preview. */}
-      <div className="board" onMouseLeave={clearPreview}>
-        {Array.from({ length: GRID }, (_, r) => (
-          <div key={r} className="row">
-            {Array.from({ length: GRID }, (_, c) => {
-              const isSquare = r % 2 === 0 && c % 2 === 0;
-              const isWallSlot = r % 2 !== c % 2;
-              return (
-                <div
-                  key={c}
-                  className={getCellClass(r, c)}
-                  onClick={() => handleClick(r, c)}
-                  onMouseEnter={
-                    isWallSlot ? () => handleWallEnter(r, c) :
-                    isSquare   ? clearPreview :
-                    undefined
-                  }
-                />
-              );
-            })}
+      <div className="board-wrap">
+        <div className="board-col-labels" aria-hidden="true">
+          {['A','B','C','D','E','F','G','H','I'].map(l => (
+            <span key={l} className="coord-label">{l}</span>
+          ))}
+        </div>
+        <div className="board-inner">
+          <div className="board-row-labels" aria-hidden="true">
+            {[1,2,3,4,5,6,7,8,9].map(n => (
+              <span key={n} className="coord-label">{n}</span>
+            ))}
           </div>
-        ))}
+          <div className="board" onMouseLeave={clearPreview}>
+            {Array.from({ length: GRID }, (_, r) => (
+              <div key={r} className="row">
+                {Array.from({ length: GRID }, (_, c) => {
+                  const isSquare = r % 2 === 0 && c % 2 === 0;
+                  const isWallSlot = r % 2 !== c % 2;
+                  return (
+                    <div
+                      key={c}
+                      className={getCellClass(r, c)}
+                      onClick={() => handleClick(r, c)}
+                      onMouseEnter={
+                        isWallSlot ? () => handleWallEnter(r, c) :
+                        isSquare   ? clearPreview :
+                        undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="legend">

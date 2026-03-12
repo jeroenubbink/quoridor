@@ -751,13 +751,15 @@
 /* ── Board grid ──────────────────────────────────────────────────────────── */
 
 .board {
-  background: #b8832a;          /* board padding / frame fill */
+  --sq: min(52px, calc((100vw - 64px) / 10.2));
+  --gap: calc(var(--sq) * 0.154); /* ~8px at 52px */
+  background: #b8832a;
   padding: 14px;
-  border: 8px solid #52300a;    /* deep walnut frame */
+  border: 8px solid #52300a;
   border-radius: 4px;
   box-shadow:
     0 10px 40px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 210, 120, 0.25); /* subtle top highlight */
+    inset 0 1px 0 rgba(255, 210, 120, 0.25);
   display: inline-flex;
   flex-direction: column;
 }
@@ -768,10 +770,10 @@
 
 /* Player squares — bright parchment so they read clearly as "open space" */
 .cell.square {
-  width: 52px;
-  height: 52px;
+  width: var(--sq);
+  height: var(--sq);
   background: #f0d878;
-  border: 1px solid rgba(0, 0, 0, 0.07); /* barely-there grid line */
+  border: 1px solid rgba(0, 0, 0, 0.07);
   cursor: default;
 }
 
@@ -786,7 +788,7 @@
 .cell.square.p2::after {
   content: '';
   position: absolute;
-  inset: 6px;
+  inset: calc(var(--sq) * 0.115);
   border-radius: 50%;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
@@ -799,16 +801,16 @@
 
 /* Empty wall slots — close to cell colour so placed walls pop */
 .cell.wall-v {
-  width: 8px;
-  height: 52px;
+  width: var(--gap);
+  height: var(--sq);
   background: #dfc45a;
   cursor: pointer;
 }
 .cell.wall-v:hover { background: #c8aa3a; }
 
 .cell.wall-h {
-  width: 52px;
-  height: 8px;
+  width: var(--sq);
+  height: var(--gap);
   background: #dfc45a;
   cursor: pointer;
 }
@@ -816,8 +818,8 @@
 
 /* Corner intersections */
 .cell.corner {
-  width: 8px;
-  height: 8px;
+  width: var(--gap);
+  height: var(--gap);
   background: #d4b84e;
 }
 
@@ -842,10 +844,64 @@
   cursor: not-allowed;
 }
 
+.last-move {
+  font-size: 0.78rem;
+  color: #7a6040;
+  font-style: italic;
+}
+
 /* ── Legend ──────────────────────────────────────────────────────────────── */
 
 .legend {
   margin-top: 1rem;
   font-size: 0.85rem;
   color: #a89060;
+}
+
+/* ── Board coordinate labels ─────────────────────────────────────────────── */
+
+.board-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.board-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.board-col-labels {
+  display: flex;
+  flex-direction: row;
+  /* offset for row-label column + gap */
+  padding-left: calc(1.2rem + 4px);
+}
+
+.board-row-labels {
+  display: flex;
+  flex-direction: column;
+  width: 1.2rem;
+}
+
+.coord-label {
+  font-size: 0.65rem;
+  color: #a89060;
+  text-align: center;
+  line-height: 1;
+  /* each label spans one square + one gap, except the last */
+  width: calc(var(--sq, 52px) + var(--gap, 8px));
+  height: calc(var(--sq, 52px) + var(--gap, 8px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.board-row-labels .coord-label {
+  width: 1.2rem;
+  height: calc(var(--sq, 52px) + var(--gap, 8px));
 }

@@ -4,6 +4,7 @@ export const BOARD_SIZE = 9;
 export const GRID = BOARD_SIZE * 2 - 1;          // 17
 export const CENTER_COL = BOARD_SIZE - 1;          // 8  (cell col 4)
 export const WALLS_PER_PLAYER = 10;
+export const WALL = 1;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,11 @@ export interface GameState {
   walls: [number, number];   // walls remaining [p1, p2]
   winner: Player | null;
   moveNumber: number;        // used to discard stale Nostr events
+  lastMove?: { type: 'pawn' | 'wall'; notation: string };
+}
+
+function cellNotation(r: number, c: number): string {
+  return String.fromCharCode(65 + c / 2) + (r / 2 + 1);
 }
 
 // ─── State helpers ────────────────────────────────────────────────────────────
@@ -56,13 +62,13 @@ export function getValidMoves(board: Board, player: Player): [number, number][] 
     const tr = pr + dr,     tc = pc + dc;
 
     if (tr < 0 || tr >= GRID || tc < 0 || tc >= GRID) continue;
-    if (board[wr][wc] === 1) continue; // wall
+    if (board[wr][wc] === WALL) continue; // wall
 
     if (board[tr][tc] === opp) {
       // Straight jump
       const jr = tr + dr, jc = tc + dc;
       const jwr = tr + dr / 2, jwc = tc + dc / 2;
-      if (jr >= 0 && jr < GRID && jc >= 0 && jc < GRID && board[jwr][jwc] !== 1) {
+      if (jr >= 0 && jr < GRID && jc >= 0 && jc < GRID && board[jwr][jwc] !== WALL) {
         moves.push([jr, jc]);
       } else {
         // Diagonal jumps
@@ -70,7 +76,7 @@ export function getValidMoves(board: Board, player: Player): [number, number][] 
         for (const [ldr, ldc] of perps) {
           const diagR = tr + ldr, diagC = tc + ldc;
           const dwr = tr + ldr / 2, dwc = tc + ldc / 2;
-          if (diagR >= 0 && diagR < GRID && diagC >= 0 && diagC < GRID && board[dwr][dwc] !== 1)
+          if (diagR >= 0 && diagR < GRID && diagC >= 0 && diagC < GRID && board[dwr][dwc] !== WALL)
             moves.push([diagR, diagC]);
         }
       }
@@ -103,7 +109,7 @@ export function hasPath(board: Board, player: Player): boolean {
       const wr = r + dr / 2, wc = c + dc / 2;
       const nr = r + dr,     nc = c + dc;
       if (nr < 0 || nr >= GRID || nc < 0 || nc >= GRID) continue;
-      if (board[wr][wc] === 1) continue;
+      if (board[wr][wc] === WALL) continue;
       const key = `${nr},${nc}`;
       if (!visited.has(key)) { visited.add(key); queue.push([nr, nc]); }
     }
@@ -131,7 +137,7 @@ export function wallCellsFromSlot(row: number, col: number): [number, number][] 
 export function isValidWall(board: Board, cells: [number, number][]): boolean {
   for (const [r, c] of cells) if (board[r][c] !== 0) return false;
   const test = board.map(r => [...r]);
-  for (const [r, c] of cells) test[r][c] = 1;
+  for (const [r, c] of cells) test[r][c] = WALL;
   return hasPath(test, 1) && hasPath(test, 2);
 }
 
@@ -149,19 +155,96 @@ export function applyPawnMove(state: GameState, row: number, col: number): GameS
     walls: state.walls,
     winner,
     moveNumber: state.moveNumber + 1,
+    lastMove: { type: 'pawn', notation: `→ ${cellNotation(row, col)}` },
   };
 }
 
 export function applyWallPlace(state: GameState, cells: [number, number][]): GameState {
   const newBoard = state.board.map(r => [...r]);
-  for (const [r, c] of cells) newBoard[r][c] = 1;
+  for (const [r, c] of cells) newBoard[r][c] = WALL;
   const newWalls: [number, number] = [state.walls[0], state.walls[1]];
   newWalls[state.currentPlayer - 1]--;
+
+  const isHorizontal = cells[0][0] === cells[1][0]; // same row = horizontal
+  const [wr, wc] = cells[0]; // use first slot cell for position
+  const notation = isHorizontal
+    ? `H-wall at ${cellNotation(wr - 1, wc)}`  // wr is odd; row above
+    : `V-wall at ${cellNotation(wr, wc + 1)}`; // wc is odd; col to right
+
   return {
     board: newBoard,
     currentPlayer: (3 - state.currentPlayer) as Player,
     walls: newWalls,
     winner: null,
     moveNumber: state.moveNumber + 1,
+    lastMove: { type: 'wall', notation },
   };
+}
+
+/**
+ * Validates an incoming game state from the opponent.
+ * Returns false if the state looks cheated or malformed.
+ * expectedMover is the player who should have just moved (the opponent).
+ */
+export function validateIncomingState(
+  current: GameState,
+  incoming: GameState,
+  expectedMover: Player,
+): boolean {
+  // Must be the next move in sequence
+  if (incoming.moveNumber !== current.moveNumber + 1) return false;
+  // Must have been the opponent's turn
+  if (current.currentPlayer !== expectedMover) return false;
+  // winner field must be null, 1, or 2
+  if (incoming.winner !== null && incoming.winner !== 1 && incoming.winner !== 2) return false;
+
+  // Diff the boards
+  const diffs: [number, number, number, number][] = [];
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      if (current.board[r][c] !== incoming.board[r][c]) {
+        diffs.push([r, c, current.board[r][c], incoming.board[r][c]]);
+      }
+    }
+  }
+
+  if (diffs.length === 2) {
+    // Pawn move: one cell cleared, one filled with mover's value
+    const cleared = diffs.find(([, , ov, nv]) => ov === expectedMover && nv === 0);
+    const placed  = diffs.find(([, , ov, nv]) => ov === 0 && nv === expectedMover);
+    if (!cleared || !placed) return false;
+
+    const [tr, tc] = [placed[0], placed[1]];
+    const valid = getValidMoves(current.board, expectedMover);
+    if (!valid.some(([r, c]) => r === tr && c === tc)) return false;
+
+    // Winner must match board
+    if (incoming.winner !== checkWinner(incoming.board)) return false;
+    // Walls unchanged
+    if (incoming.walls[0] !== current.walls[0] || incoming.walls[1] !== current.walls[1]) return false;
+
+  } else if (diffs.length === 3) {
+    // Wall placement: 3 cells 0 → WALL
+    if (!diffs.every(([, , ov, nv]) => ov === 0 && nv === WALL)) return false;
+    if (current.walls[expectedMover - 1] <= 0) return false;
+
+    const cells = diffs.map(([r, c]) => [r, c] as [number, number]);
+    if (!isValidWall(current.board, cells)) return false;
+
+    const expectedWalls: [number, number] = [current.walls[0], current.walls[1]];
+    expectedWalls[expectedMover - 1]--;
+    if (incoming.walls[0] !== expectedWalls[0] || incoming.walls[1] !== expectedWalls[1]) return false;
+
+    // No winner from wall placement
+    if (incoming.winner !== null) return false;
+
+  } else {
+    return false;
+  }
+
+  // currentPlayer must toggle (or stay on winner if game over)
+  const expectedNext = incoming.winner ? expectedMover : (3 - expectedMover) as Player;
+  if (incoming.currentPlayer !== expectedNext) return false;
+
+  return true;
 }

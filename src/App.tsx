@@ -45,6 +45,7 @@ interface Session {
   myPlayer: Player;
   lastEventId: string | null;
   joinCode: string;
+  isCreator: boolean;
 }
 
 interface GameEntry {
@@ -186,18 +187,23 @@ export default function App() {
   const addSubscription = useCallback((gameId: string, myPlayer: Player, opponentPubkey: string) => {
     subsRef.current.get(gameId)?.stop();
 
-    const sub = subscribeToGame(gameId, opponentPubkey, (incoming) => {
-      setGames(prev => {
-        const entry = prev[gameId];
-        if (!entry || incoming.moveNumber <= entry.gameState.moveNumber) return prev;
-        // Stamp timestamp and clear timeout warning for this game.
-        const all = savedSessions.load();
-        if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
-        if (gameId === activeGameIdRef.current) setTimeoutWarning(false);
-        return { ...prev, [gameId]: { ...entry, gameState: incoming, opponentSeen: true } };
-      });
-      if (incoming.currentPlayer === myPlayer) notifyTurn(gameId);
-    });
+    const sub = subscribeToGame(
+      gameId,
+      opponentPubkey,
+      myPlayer,
+      () => gamesRef.current[gameId]?.gameState ?? null,
+      (incoming) => {
+        setGames(prev => {
+          const entry = prev[gameId];
+          if (!entry || incoming.moveNumber <= entry.gameState.moveNumber) return prev;
+          const all = savedSessions.load();
+          if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
+          if (gameId === activeGameIdRef.current) setTimeoutWarning(false);
+          return { ...prev, [gameId]: { ...entry, gameState: incoming, opponentSeen: true } };
+        });
+        if (incoming.currentPlayer === myPlayer) notifyTurn(gameId);
+      },
+    );
 
     subsRef.current.set(gameId, sub);
   }, []);
@@ -277,7 +283,7 @@ export default function App() {
       });
       await publishInvite(opponentPubkey, gameId, code);
 
-      const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: creatorPlayer, lastEventId: eventId, joinCode: code };
+      const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: creatorPlayer, lastEventId: eventId, joinCode: code, isCreator: true };
       setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false } }));
       savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: creatorPlayer, joinCode: code, lastMoveAt: Date.now() });
       setActiveGameId(gameId);
@@ -305,7 +311,7 @@ export default function App() {
     catch { setError('Received malformed join code'); return; }
 
     addSubscription(gameId, myPlayer, creatorPubkey);
-    const session: Session = { myPubkey, opponentPubkey: creatorPubkey, gameId, myPlayer, lastEventId: null, joinCode: joinCodeStr };
+    const session: Session = { myPubkey, opponentPubkey: creatorPubkey, gameId, myPlayer, lastEventId: null, joinCode: joinCodeStr, isCreator: false };
     setGames(prev => ({ ...prev, [gameId]: { session, gameState: createInitialState(), opponentSeen: false } }));
     savedSessions.upsert({ gameId, myPubkey, opponentPubkey: creatorPubkey, myPlayer, joinCode: joinCodeStr, lastMoveAt: Date.now() });
     setActiveGameId(gameId);
@@ -416,13 +422,13 @@ export default function App() {
 
   // ── Move handlers ───────────────────────────────────────────────────────────
 
-  const handlePawnMove = useCallback(async (row: number, col: number) => {
+  const handleMove = useCallback(async (applyFn: (state: GameState) => GameState, errorLabel: string) => {
     const gameId = activeGameIdRef.current;
     if (!gameId) return;
     const entry = gamesRef.current[gameId];
     if (!entry) return;
     const { session, gameState } = entry;
-    const next = applyPawnMove(gameState, row, col);
+    const next = applyFn(gameState);
 
     setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: next } }));
 
@@ -445,42 +451,17 @@ export default function App() {
       setTimeoutWarning(false);
     } catch (e) {
       setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState } }));
-      setError(e instanceof Error ? e.message : 'Failed to publish move');
+      setError(e instanceof Error ? e.message : errorLabel);
     }
   }, []);
 
-  const handleWallPlace = useCallback(async (cells: [number, number][]) => {
-    const gameId = activeGameIdRef.current;
-    if (!gameId) return;
-    const entry = gamesRef.current[gameId];
-    if (!entry) return;
-    const { session, gameState } = entry;
-    const next = applyWallPlace(gameState, cells);
+  const handlePawnMove = useCallback((row: number, col: number) => {
+    void handleMove(state => applyPawnMove(state, row, col), 'Failed to publish move');
+  }, [handleMove]);
 
-    setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: next } }));
-
-    try {
-      const eventId = await publishMove({
-        gameId: session.gameId,
-        p1Pubkey: session.myPlayer === 1 ? session.myPubkey : session.opponentPubkey,
-        p2Pubkey: session.myPlayer === 1 ? session.opponentPubkey : session.myPubkey,
-        myPlayer: session.myPlayer,
-        prevEventId: session.lastEventId,
-        state: next,
-      });
-      setGames(prev => {
-        const e = prev[gameId];
-        if (!e) return prev;
-        return { ...prev, [gameId]: { ...e, session: { ...e.session, lastEventId: eventId } } };
-      });
-      const all = savedSessions.load();
-      if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
-      setTimeoutWarning(false);
-    } catch (e) {
-      setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState } }));
-      setError(e instanceof Error ? e.message : 'Failed to publish wall');
-    }
-  }, []);
+  const handleWallPlace = useCallback((cells: [number, number][]) => {
+    void handleMove(state => applyWallPlace(state, cells), 'Failed to publish wall');
+  }, [handleMove]);
 
   // ── Resume handler ──────────────────────────────────────────────────────────
 
@@ -509,6 +490,11 @@ export default function App() {
         addSubscription(ss.gameId, ss.myPlayer, ss.opponentPubkey);
         const resumed = await fetchLatestGameState(ss.gameId, ss.myPubkey, ss.opponentPubkey);
         const gameState = resumed?.state ?? createInitialState();
+        // Derive isCreator: the creator's npub is the 2nd segment of the join code
+        const joinParts = ss.joinCode.split(':');
+        const isCreator = joinParts.length >= 2 && (() => {
+          try { return pubkeyFromNpub(joinParts[1]) === pubkey; } catch { return false; }
+        })();
         const session: Session = {
           myPubkey: ss.myPubkey,
           opponentPubkey: ss.opponentPubkey,
@@ -516,6 +502,7 @@ export default function App() {
           myPlayer: ss.myPlayer,
           lastEventId: resumed?.myLastEventId ?? null,
           joinCode: ss.joinCode,
+          isCreator,
         };
         newGames[ss.gameId] = { session, gameState, opponentSeen: false };
       }
@@ -526,6 +513,30 @@ export default function App() {
       setError(e instanceof Error ? e.message : 'Resume failed');
       setPhase('resume-prompt');
     }
+  };
+
+  // ── Claim win (timeout) ─────────────────────────────────────────────────────
+
+  const handleClaimWin = async (gameId: string) => {
+    const entry = gamesRef.current[gameId];
+    if (!entry || entry.gameState.winner) return;
+    const { session, gameState } = entry;
+    const win: GameState = { ...gameState, winner: session.myPlayer };
+    try {
+      await publishMove({
+        gameId,
+        p1Pubkey: session.myPlayer === 1 ? session.myPubkey : session.opponentPubkey,
+        p2Pubkey: session.myPlayer === 1 ? session.opponentPubkey : session.myPubkey,
+        myPlayer: session.myPlayer,
+        prevEventId: session.lastEventId,
+        state: win,
+      });
+    } catch { /* best-effort */ }
+    subsRef.current.get(gameId)?.stop();
+    subsRef.current.delete(gameId);
+    setGames(prev => { const next = { ...prev }; delete next[gameId]; return next; });
+    savedSessions.remove(gameId);
+    if (activeGameId === gameId) { setActiveGameId(null); setPhase('lobby'); }
   };
 
   // ── Detect saved session on first load ──────────────────────────────────────
@@ -715,7 +726,7 @@ export default function App() {
                       {confirmAbandon === session.gameId ? (
                         <>
                           <button className="btn btn-small btn-danger" onClick={() => handleAbandonGame(session.gameId)}>
-                            Confirm
+                            Confirm resign
                           </button>
                           <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(null)}>
                             Cancel
@@ -723,7 +734,7 @@ export default function App() {
                         </>
                       ) : (
                         <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(session.gameId)}>
-                          Abandon
+                          Resign
                         </button>
                       )}
                     </div>
@@ -804,9 +815,16 @@ export default function App() {
               ) : activeEntry.gameState.currentPlayer === activeEntry.session.myPlayer ? (
                 <span className={`pname p${activeEntry.session.myPlayer}-color`}>Your turn</span>
               ) : (
-                <span className="waiting">Waiting for opponent…</span>
+                <span className="waiting">
+                  {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent…'}
+                </span>
               )}
             </div>
+            {activeEntry.gameState.lastMove && !activeEntry.gameState.winner && (
+              <div className="last-move">
+                Opponent's last move: {activeEntry.gameState.lastMove.notation}
+              </div>
+            )}
             <div className="game-players">
               <UserCard
                 pubkey={activeEntry.session.myPlayer === 1 ? activeEntry.session.myPubkey : activeEntry.session.opponentPubkey}
@@ -828,7 +846,7 @@ export default function App() {
                 confirmAbandon === activeGameId ? (
                   <>
                     <button className="btn btn-small btn-danger" onClick={() => handleAbandonGame(activeGameId!)}>
-                      Confirm abandon
+                      Confirm resign
                     </button>
                     <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(null)}>
                       Cancel
@@ -836,12 +854,12 @@ export default function App() {
                   </>
                 ) : (
                   <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(activeGameId)}>
-                    Abandon
+                    Resign
                   </button>
                 )
               )}
             </div>
-            {activeEntry.session.myPlayer === 1 && !activeEntry.opponentSeen && (
+            {activeEntry.session.isCreator && !activeEntry.opponentSeen && (
               <div className="join-code-box" style={{ marginTop: '0.5rem' }}>
                 <p className="join-code-label">Share this code with your opponent:</p>
                 <code className="join-code">{activeEntry.session.joinCode}</code>
@@ -855,8 +873,10 @@ export default function App() {
 
           {timeoutWarning && !activeEntry.gameState.winner && (
             <div className="timeout-banner">
-              ⏰ Your opponent has not moved in over 2 days.
-              You may declare yourself the winner.
+              <span>⏰ Opponent has not moved in over 2 days.</span>
+              <button className="btn btn-small btn-primary" onClick={() => activeGameId && handleClaimWin(activeGameId)}>
+                Claim win
+              </button>
               <button className="error-close" onClick={() => setTimeoutWarning(false)}>✕</button>
             </div>
           )}
