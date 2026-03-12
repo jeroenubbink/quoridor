@@ -622,6 +622,39 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          <div className="about-section">
+            <h2 className="about-title">What is Quoridor?</h2>
+            <p className="about-text">
+              Quoridor is a two-player strategy board game. Each player has one pawn
+              that starts on opposite sides of a 9×9 grid. Your goal is to be the
+              first to reach the other side — but both players can place walls to
+              block the way. Every turn you either move your pawn one square or place
+              one wall segment. The twist: you can never fully trap your opponent;
+              a path to their goal must always remain open.
+            </p>
+            <p className="about-text">
+              Easy to learn, surprisingly deep.{' '}
+              <a
+                className="about-link"
+                href="https://en.wikipedia.org/wiki/Quoridor"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Full rules on Wikipedia →
+              </a>
+            </p>
+            <h2 className="about-title">Features</h2>
+            <ul className="about-features">
+              <li>Fully peer-to-peer — game state lives on Nostr relays, no server</li>
+              <li>Play with your Nostr identity or jump in anonymously</li>
+              <li>Invite a specific player by searching their name or npub</li>
+              <li>Find a random opponent with one click</li>
+              <li>Run multiple games at the same time</li>
+              <li>Sessions survive page reloads and reconnects</li>
+              <li>Browser notifications when it's your turn</li>
+            </ul>
+          </div>
         </div>
       )}
 
