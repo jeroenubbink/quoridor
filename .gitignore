@@ -20,6 +20,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Review / scratch notes
+REVIEW.md
+
 # Editor directories
 .vscode/*
 !.vscode/extensions.json
