@@ -27,7 +27,8 @@ export interface SavedSession {
   opponentPubkey: string;
   myPlayer: 1 | 2;
   joinCode: string;
-  lastMoveAt?: number; // ms timestamp of the most recent move (ours or opponent's)
+  lastMoveAt?: number;      // ms timestamp of the most recent move (ours or opponent's)
+  finishReason?: 'timeout' | 'resign'; // set locally when we initiate the end
 }
 
 export const savedSessions = {

@@ -34,6 +34,16 @@ import type { NDKSubscription } from '@nostr-dev-kit/ndk';
 
 const TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
 
+// crypto.randomUUID() requires a secure context (HTTPS/localhost).
+// Fall back to a Math.random UUID for plain HTTP (e.g. LAN dev).
+function randomUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Phase = 'disconnected' | 'resume-prompt' | 'reconnecting' | 'connecting' | 'lobby' | 'playing';
@@ -51,7 +61,8 @@ interface Session {
 interface GameEntry {
   session: Session;
   gameState: GameState;
-  opponentSeen: boolean; // true once we receive the first event from the opponent
+  opponentSeen: boolean;          // true once we receive the first event from the opponent
+  finishReason?: 'timeout' | 'resign'; // set locally when we initiate the end
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -263,7 +274,7 @@ export default function App() {
   // creatorPlayer = 1 for random-seek games (creator moves first),
   //               = 2 for manual invites (invitee moves first).
   const doCreate = async (opponentPubkey: string, creatorPlayer: 1 | 2 = 2) => {
-    const gameId = crypto.randomUUID();
+    const gameId = randomUUID();
     const initial = createInitialState();
     // Encode creator's player number so the joiner can derive theirs.
     const code = `${gameId}:${npubFromPubkey(myPubkey)}:${creatorPlayer}`;
@@ -390,34 +401,40 @@ export default function App() {
 
   const handleAbandonGame = async (gameId: string) => {
     const entry = gamesRef.current[gameId];
-    if (entry && !entry.gameState.winner) {
-      // Publish a forfeit: set winner to the opponent so they see the result.
-      const { session, gameState } = entry;
-      const opponentPlayer = (3 - session.myPlayer) as Player;
-      const forfeit: GameState = { ...gameState, winner: opponentPlayer };
-      try {
-        await publishMove({
-          gameId,
-          p1Pubkey: session.myPlayer === 1 ? session.myPubkey : session.opponentPubkey,
-          p2Pubkey: session.myPlayer === 1 ? session.opponentPubkey : session.myPubkey,
-          myPlayer: session.myPlayer,
-          prevEventId: session.lastEventId,
-          state: forfeit,
-        });
-      } catch {
-        // Best-effort — remove locally regardless
-      }
+    setConfirmAbandon(null);
+    if (!entry) return;
+
+    if (entry.gameState.winner) {
+      // Game already finished — just dismiss it from the list.
+      subsRef.current.get(gameId)?.stop();
+      subsRef.current.delete(gameId);
+      setGames(prev => { const next = { ...prev }; delete next[gameId]; return next; });
+      savedSessions.remove(gameId);
+      if (activeGameId === gameId) { setActiveGameId(null); setPhase('lobby'); }
+      return;
     }
+
+    // Active game — publish forfeit so opponent sees the result.
+    const { session, gameState } = entry;
+    const opponentPlayer = (3 - session.myPlayer) as Player;
+    const forfeit: GameState = { ...gameState, winner: opponentPlayer };
+    try {
+      await publishMove({
+        gameId,
+        p1Pubkey: session.myPlayer === 1 ? session.myPubkey : session.opponentPubkey,
+        p2Pubkey: session.myPlayer === 1 ? session.opponentPubkey : session.myPubkey,
+        myPlayer: session.myPlayer,
+        prevEventId: session.lastEventId,
+        state: forfeit,
+      });
+    } catch { /* best-effort */ }
 
     subsRef.current.get(gameId)?.stop();
     subsRef.current.delete(gameId);
-    setGames(prev => { const next = { ...prev }; delete next[gameId]; return next; });
-    savedSessions.remove(gameId);
-    setConfirmAbandon(null);
-    if (activeGameId === gameId) {
-      setActiveGameId(null);
-      setPhase('lobby');
-    }
+    setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: forfeit, finishReason: 'resign' } }));
+    const ss = savedSessions.load()[gameId];
+    if (ss) savedSessions.upsert({ ...ss, finishReason: 'resign' });
+    if (activeGameId === gameId) { setActiveGameId(null); setPhase('lobby'); }
   };
 
   // ── Move handlers ───────────────────────────────────────────────────────────
@@ -504,7 +521,7 @@ export default function App() {
           joinCode: ss.joinCode,
           isCreator,
         };
-        newGames[ss.gameId] = { session, gameState, opponentSeen: false };
+        newGames[ss.gameId] = { session, gameState, opponentSeen: false, finishReason: ss.finishReason };
       }
 
       setGames(newGames);
@@ -534,8 +551,9 @@ export default function App() {
     } catch { /* best-effort */ }
     subsRef.current.get(gameId)?.stop();
     subsRef.current.delete(gameId);
-    setGames(prev => { const next = { ...prev }; delete next[gameId]; return next; });
-    savedSessions.remove(gameId);
+    setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: win, finishReason: 'timeout' } }));
+    const ss = savedSessions.load()[gameId];
+    if (ss) savedSessions.upsert({ ...ss, finishReason: 'timeout' });
     if (activeGameId === gameId) { setActiveGameId(null); setPhase('lobby'); }
   };
 
@@ -703,46 +721,90 @@ export default function App() {
             )}
           </div>
 
-          {/* Active games list */}
-          {gameList.length > 0 && (
-            <div className="game-list">
-              <p className="game-list-title">Active games</p>
-              {gameList.map(({ session, gameState }) => {
-                const isMyTurn = !gameState.winner && gameState.currentPlayer === session.myPlayer;
-                return (
-                  <div key={session.gameId} className="game-list-item">
-                    <div className="game-list-info">
-                      <span className={`game-list-status ${gameState.winner ? (gameState.winner === session.myPlayer ? 'won' : 'lost') : isMyTurn ? 'your-turn' : ''}`}>
-                        {gameState.winner
-                          ? (gameState.winner === session.myPlayer ? 'You won' : 'You lost')
-                          : isMyTurn ? 'Your turn' : 'Waiting'}
-                      </span>
-                      <UserCard pubkey={session.opponentPubkey} size="sm" label="vs" />
-                    </div>
-                    <div className="game-list-actions">
-                      <button className="btn btn-small btn-primary" onClick={() => handleEnterGame(session.gameId)}>
-                        Enter
-                      </button>
-                      {confirmAbandon === session.gameId ? (
-                        <>
-                          <button className="btn btn-small btn-danger" onClick={() => handleAbandonGame(session.gameId)}>
-                            Confirm resign
-                          </button>
-                          <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(null)}>
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(session.gameId)}>
-                          Resign
-                        </button>
-                      )}
-                    </div>
+          {/* Games list */}
+          {gameList.length > 0 && (() => {
+            const timestamps = savedSessions.load();
+            const active = gameList
+              .filter(e => !e.gameState.winner)
+              .sort((a, b) => {
+                const aMyTurn = a.gameState.currentPlayer === a.session.myPlayer ? 1 : 0;
+                const bMyTurn = b.gameState.currentPlayer === b.session.myPlayer ? 1 : 0;
+                if (aMyTurn !== bMyTurn) return bMyTurn - aMyTurn; // my turn first
+                // Both in same bucket: newest lastMoveAt first (oldest waiting games sink to bottom)
+                const aTs = timestamps[a.session.gameId]?.lastMoveAt ?? 0;
+                const bTs = timestamps[b.session.gameId]?.lastMoveAt ?? 0;
+                return bTs - aTs;
+              });
+            const finished = gameList.filter(e => e.gameState.winner);
+
+            const statusText = (e: GameEntry) => {
+              if (e.gameState.winner) {
+                if (e.finishReason === 'timeout') return 'Won by timeout';
+                if (e.finishReason === 'resign') return 'Resigned';
+                return e.gameState.winner === e.session.myPlayer ? 'You won' : 'You lost';
+              }
+              return e.gameState.currentPlayer === e.session.myPlayer ? 'Your turn' : 'Waiting';
+            };
+            const statusClass = (e: GameEntry) => {
+              if (e.gameState.winner) return e.gameState.winner === e.session.myPlayer ? 'won' : 'lost';
+              return e.gameState.currentPlayer === e.session.myPlayer ? 'your-turn' : '';
+            };
+
+            const renderItem = (entry: GameEntry) => {
+              const { session, gameState } = entry;
+              const done = !!gameState.winner;
+              return (
+                <div key={session.gameId} className="game-list-item">
+                  <div className="game-list-info">
+                    <span className={`game-list-status ${statusClass(entry)}`}>
+                      {statusText(entry)}
+                    </span>
+                    <UserCard pubkey={session.opponentPubkey} size="sm" label="vs" />
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <div className="game-list-actions">
+                    <button className="btn btn-small btn-primary" onClick={() => handleEnterGame(session.gameId)}>
+                      {done ? 'View' : 'Enter'}
+                    </button>
+                    {done ? (
+                      <button className="btn btn-small btn-ghost" onClick={() => handleAbandonGame(session.gameId)}>
+                        Dismiss
+                      </button>
+                    ) : confirmAbandon === session.gameId ? (
+                      <>
+                        <button className="btn btn-small btn-danger" onClick={() => handleAbandonGame(session.gameId)}>
+                          Confirm resign
+                        </button>
+                        <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(null)}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(session.gameId)}>
+                        Resign
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            };
+
+            return (
+              <div className="game-list">
+                {active.length > 0 && (
+                  <>
+                    <p className="game-list-title">Active games</p>
+                    {active.map(renderItem)}
+                  </>
+                )}
+                {finished.length > 0 && (
+                  <>
+                    <p className="game-list-title" style={{ marginTop: active.length > 0 ? '0.75rem' : 0 }}>Finished games</p>
+                    {finished.map(renderItem)}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Matchmaking */}
           <div className="seek-section">
@@ -816,7 +878,7 @@ export default function App() {
                 <span className={`pname p${activeEntry.session.myPlayer}-color`}>Your turn</span>
               ) : (
                 <span className="waiting">
-                  {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent…'}
+                  {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent\'s move…'}
                 </span>
               )}
             </div>
@@ -840,26 +902,7 @@ export default function App() {
                 playerColor={2}
               />
             </div>
-            <div className="game-meta">
-              <button className="btn btn-small btn-ghost" onClick={handleBackToLobby}>← Games</button>
-              {!activeEntry.gameState.winner && (
-                confirmAbandon === activeGameId ? (
-                  <>
-                    <button className="btn btn-small btn-danger" onClick={() => handleAbandonGame(activeGameId!)}>
-                      Confirm resign
-                    </button>
-                    <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(null)}>
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(activeGameId)}>
-                    Resign
-                  </button>
-                )
-              )}
-            </div>
-            {activeEntry.session.isCreator && !activeEntry.opponentSeen && (
+            {activeEntry.session.isCreator && activeEntry.session.myPlayer === 2 && activeEntry.gameState.moveNumber === 0 && (
               <div className="join-code-box" style={{ marginTop: '0.5rem' }}>
                 <p className="join-code-label">Share this code with your opponent:</p>
                 <code className="join-code">{activeEntry.session.joinCode}</code>
@@ -887,6 +930,26 @@ export default function App() {
             onPawnMove={handlePawnMove}
             onWallPlace={handleWallPlace}
           />
+
+          <div className="game-footer">
+            <button className="btn btn-secondary" onClick={handleBackToLobby}>← Games</button>
+            {!activeEntry.gameState.winner && (
+              confirmAbandon === activeGameId ? (
+                <>
+                  <button className="btn btn-danger" onClick={() => handleAbandonGame(activeGameId!)}>
+                    Confirm resign
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => setConfirmAbandon(null)}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button className="btn btn-ghost btn-resign" onClick={() => setConfirmAbandon(activeGameId)}>
+                  Resign
+                </button>
+              )
+            )}
+          </div>
         </div>
       )}
     </div>

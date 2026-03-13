@@ -592,19 +592,6 @@
   font-style: italic;
 }
 
-.game-meta {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  font-size: 0.85rem;
-  color: #a89060;
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 0.3em;
-}
 
 /* ── User card ───────────────────────────────────────────────────────────── */
 
@@ -705,54 +692,25 @@
    Board
    ══════════════════════════════════════════════════════════════════════════ */
 
-.wall-counts {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  margin-bottom: 0.8rem;
-}
-
-.wall-row {
+.wall-summary {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
 }
 
-.wall-label {
-  font-weight: 700;
-  font-size: 0.82rem;
-  width: 5rem;
-  text-align: right;
-  flex-shrink: 0;
+.wall-summary-sep {
+  color: #5a4830;
 }
 
-.wall-num {
-  font-size: 0.82rem;
-  color: #a89060;
-  width: 1.2rem;
+.wall-summary-label {
+  color: #5a4830;
 }
-
-.wall-pips {
-  display: flex;
-  gap: 3px;
-}
-
-.pip {
-  display: inline-block;
-  width: 14px;
-  height: 6px;
-  border-radius: 2px;
-}
-
-.pip-p1     { background: #ff6b6b; }
-.pip-p2     { background: #6b8eff; }
-.pip-used   { background: #1e1608; }
 
 /* ── Board grid ──────────────────────────────────────────────────────────── */
 
 .board {
-  --sq: min(52px, calc((100vw - 64px) / 10.2));
-  --gap: calc(var(--sq) * 0.154); /* ~8px at 52px */
   background: #b8832a;
   padding: 14px;
   border: 8px solid #52300a;
@@ -844,23 +802,45 @@
   cursor: not-allowed;
 }
 
+/* ── In-game footer buttons ──────────────────────────────────────────────── */
+
+.game-footer {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  width: 100%;
+  max-width: 480px;
+}
+
+.game-footer .btn {
+  flex: 1;
+}
+
+.btn-resign {
+  color: #f88;
+  border-color: #7a3030;
+}
+
+.btn-resign:hover {
+  background: #3a1010;
+  border-color: #cc4444;
+}
+
 .last-move {
   font-size: 0.78rem;
   color: #7a6040;
   font-style: italic;
 }
 
-/* ── Legend ──────────────────────────────────────────────────────────────── */
-
-.legend {
-  margin-top: 1rem;
-  font-size: 0.85rem;
-  color: #a89060;
-}
 
 /* ── Board coordinate labels ─────────────────────────────────────────────── */
 
 .board-wrap {
+  /* --sq accounts for: app padding (32px) + board border+padding (44px)
+     + row-label column (20px) + gap (4px) = ~100px total non-cell space.
+     Cell space = --sq * (9 squares + 8 gaps * 0.154) = --sq * 10.23      */
+  --sq: min(52px, calc((100vw - 100px) / 10.23));
+  --gap: calc(var(--sq) * 0.154); /* ~8px at 52px */
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -877,14 +857,18 @@
 .board-col-labels {
   display: flex;
   flex-direction: row;
-  /* offset for row-label column + gap */
-  padding-left: calc(1.2rem + 4px);
+  gap: var(--gap);
+  /* row-label col (1.2rem) + inner gap (4px) + board border (8px) + board padding (14px) */
+  padding-left: calc(1.2rem + 26px);
 }
 
 .board-row-labels {
   display: flex;
   flex-direction: column;
+  gap: var(--gap);
   width: 1.2rem;
+  /* board border (8px) + board padding (14px) */
+  padding-top: 22px;
 }
 
 .coord-label {
@@ -892,9 +876,8 @@
   color: #a89060;
   text-align: center;
   line-height: 1;
-  /* each label spans one square + one gap, except the last */
-  width: calc(var(--sq, 52px) + var(--gap, 8px));
-  height: calc(var(--sq, 52px) + var(--gap, 8px));
+  width: var(--sq);
+  height: var(--sq);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -903,5 +886,5 @@
 
 .board-row-labels .coord-label {
   width: 1.2rem;
-  height: calc(var(--sq, 52px) + var(--gap, 8px));
+  height: var(--sq);
 }

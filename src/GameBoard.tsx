@@ -3,7 +3,6 @@ import {
   getValidMoves,
   wallCellsFromSlot,
   isValidWall,
-  WALLS_PER_PLAYER,
   GRID,
   type GameState,
   type Player,
@@ -134,28 +133,17 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
     return cls.join(' ');
   };
 
-  // ── Wall pip indicator ────────────────────────────────────────────────────
-
-  const WallPips = ({ player }: { player: Player }) => (
-    <div className="wall-pips">
-      {Array.from({ length: WALLS_PER_PLAYER }, (_, i) => (
-        <span key={i} className={`pip ${i < walls[player - 1] ? `pip-p${player}` : 'pip-used'}`} />
-      ))}
-    </div>
-  );
-
   // ── Render ────────────────────────────────────────────────────────────────
+
+  const oppPlayer = (3 - myPlayer) as Player;
 
   return (
     <>
-      <div className="wall-counts">
-        {([1, 2] as Player[]).map(p => (
-          <div key={p} className="wall-row">
-            <span className={`p${p}-color wall-label`}>P{p}{p === myPlayer ? ' (you)' : ''}</span>
-            <WallPips player={p} />
-            <span className="wall-num">{walls[p - 1]}</span>
-          </div>
-        ))}
+      <div className="wall-summary">
+        <span className={`p${myPlayer}-color`}>You: {walls[myPlayer - 1]}</span>
+        <span className="wall-summary-sep">·</span>
+        <span className={`p${oppPlayer}-color`}>Opp: {walls[oppPlayer - 1]}</span>
+        <span className="wall-summary-label">walls left</span>
       </div>
 
       {/* onMouseLeave on board clears preview; squares clear it on enter.
@@ -198,11 +186,6 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
         </div>
       </div>
 
-      <div className="legend">
-        <span className="p1-color">● P1</span> reaches bottom &nbsp;·&nbsp;
-        <span className="p2-color">● P2</span> reaches top &nbsp;·&nbsp;
-        hover wall gaps to preview
-      </div>
     </>
   );
 }
