@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import {
   getValidMoves,
   wallCellsFromSlot,
@@ -24,6 +24,12 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
   const { board, currentPlayer, walls, winner } = state;
   const isMyTurn = !winner && currentPlayer === myPlayer;
   const [hoveredWall, setHoveredWall] = useState<[number, number][] | null>(null);
+  // Tracks the wall slot key ("row,col") selected by a tap — second tap on same key places.
+  const [pendingWall, setPendingWall] = useState<string | null>(null);
+  // Set in pointerdown for touch; cleared in click. Lets click handler skip for touch
+  // (all touch logic lives in handlePointerDown so React's microtask state flushing
+  // between touch events and synthesized clicks can't cause races).
+  const isTouchRef = useRef(false);
 
   // Valid pawn moves (only computed when it's my turn)
   const validMoveSet = useMemo<Set<string>>(() => {
@@ -43,22 +49,57 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
-  const handleClick = (row: number, col: number) => {
-    if (!isMyTurn) return;
+  // Pointer down: handles ALL touch input.  pointerType tells us the input
+  // device without any timing heuristics.  Mouse pointerdown is ignored here
+  // — mouse placement goes through the click handler instead.
+  const handlePointerDown = (e: React.PointerEvent, row: number, col: number) => {
+    if (e.pointerType !== 'touch' || !isMyTurn) return;
+    isTouchRef.current = true;
+
     const isSquare = row % 2 === 0 && col % 2 === 0;
     if (isSquare) {
+      setPendingWall(null);
+      setHoveredWall(null);
       if (validMoveSet.has(`${row},${col}`)) onPawnMove(row, col);
-    } else {
-      if (wallPreview.valid && hoveredWall) onWallPlace(hoveredWall);
+    } else if (walls[currentPlayer - 1] > 0) {
+      const key = `${row},${col}`;
+      if (pendingWall === key) {
+        // Second tap on same slot → place the wall
+        const cells = wallCellsFromSlot(row, col);
+        if (isValidWall(board, cells)) onWallPlace(cells);
+        setPendingWall(null);
+        setHoveredWall(null);
+      } else {
+        // First tap (or moved to a different slot) → preview only
+        setPendingWall(key);
+        setHoveredWall(wallCellsFromSlot(row, col));
+      }
     }
   };
 
+  // Click: handles mouse input only.  The synthesized click that follows a
+  // touch pointerdown is suppressed via isTouchRef.
+  const handleClick = (row: number, col: number) => {
+    if (isTouchRef.current) { isTouchRef.current = false; return; }
+    if (!isMyTurn) return;
+
+    const isSquare = row % 2 === 0 && col % 2 === 0;
+    if (isSquare) {
+      if (validMoveSet.has(`${row},${col}`)) onPawnMove(row, col);
+    } else if (walls[currentPlayer - 1] > 0) {
+      // Mouse: hover already shows the preview — click places immediately
+      const cells = wallCellsFromSlot(row, col);
+      if (isValidWall(board, cells)) onWallPlace(cells);
+    }
+  };
+
+  // Mouse hover preview (desktop only; touch devices don't fire real mouseenter)
   const handleWallEnter = (row: number, col: number) => {
     if (!isMyTurn) return;
     setHoveredWall(wallCellsFromSlot(row, col));
   };
 
-  const clearPreview = () => setHoveredWall(null);
+  const clearPreview = () => { setHoveredWall(null); setPendingWall(null); };
 
   // ── CSS class builder ─────────────────────────────────────────────────────
 
@@ -141,6 +182,7 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
                     <div
                       key={c}
                       className={getCellClass(r, c)}
+                      onPointerDown={(e) => handlePointerDown(e, r, c)}
                       onClick={() => handleClick(r, c)}
                       onMouseEnter={
                         isWallSlot ? () => handleWallEnter(r, c) :
