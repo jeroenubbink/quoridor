@@ -446,16 +446,28 @@ export function subscribeToSeeks(
     { closeOnEose: false, groupable: false },
   );
 
-  // Collect stored seeks until EOSE so we can pick the oldest one.
+  // Collect stored seeks briefly, then pick the oldest (longest waiting) first.
+  // We flush on EOSE or after a 3-second timeout — whichever comes first —
+  // so matching works even if the relay doesn't send EOSE.
   const pending: { pubkey: string; createdAt: number }[] = [];
-  let eoseReceived = false;
+  let flushed = false;
+
+  const flush = () => {
+    if (flushed) return;
+    flushed = true;
+    if (pending.length === 0) return;
+    pending.sort((a, b) => a.createdAt - b.createdAt);
+    onSeek(pending[0].pubkey);
+  };
+
+  const flushTimer = setTimeout(flush, 3000);
 
   sub.on('event', (ev: NDKEvent) => {
     if (ev.pubkey === excludePubkey) return;
     const age = Date.now() - (ev.created_at ?? 0) * 1000;
     if (age > SEEK_EXPIRY_MS) return;
 
-    if (!eoseReceived) {
+    if (!flushed) {
       pending.push({ pubkey: ev.pubkey, createdAt: ev.created_at ?? 0 });
     } else {
       onSeek(ev.pubkey);
@@ -463,11 +475,8 @@ export function subscribeToSeeks(
   });
 
   sub.on('eose', () => {
-    eoseReceived = true;
-    if (pending.length === 0) return;
-    // Match the player who has been waiting longest.
-    pending.sort((a, b) => a.createdAt - b.createdAt);
-    onSeek(pending[0].pubkey);
+    clearTimeout(flushTimer);
+    flush();
   });
 
   return sub;
