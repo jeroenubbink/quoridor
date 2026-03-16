@@ -104,7 +104,8 @@ export default function App() {
 
   // ── Lobby form state ────────────────────────────────────────────────────────
 
-  const [lobbyTab, setLobbyTab] = useState<'create' | 'join'>('create');
+  const [lobbySection, setLobbySection] = useState<'active' | 'new' | 'history'>('active');
+  const [newGameTab, setNewGameTab] = useState<'create' | 'join'>('create');
   const [selectedOpponentPubkey, setSelectedOpponentPubkey] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [confirmAbandon, setConfirmAbandon] = useState<string | null>(null); // gameId pending confirm
@@ -708,159 +709,190 @@ export default function App() {
       )}
 
       {/* ── Lobby ── */}
-      {phase === 'lobby' && (
-        <div className="screen lobby-screen">
-          <div className="identity-line">
-            <UserCard pubkey={myPubkey} size={isAnonymous ? 'md' : 'lg'} label="You" />
-            {!isAnonymous && (
-              <button
-                className="btn btn-small btn-ghost"
-                style={{ marginTop: '0.25rem' }}
-                onClick={() => navigator.clipboard.writeText(npubFromPubkey(myPubkey))}
-              >Copy npub</button>
-            )}
-          </div>
+      {phase === 'lobby' && (() => {
+        const timestamps = savedSessions.load();
+        const activeGames = gameList
+          .filter(e => !e.gameState.winner)
+          .sort((a, b) => {
+            const aMyTurn = a.gameState.currentPlayer === a.session.myPlayer ? 1 : 0;
+            const bMyTurn = b.gameState.currentPlayer === b.session.myPlayer ? 1 : 0;
+            if (aMyTurn !== bMyTurn) return bMyTurn - aMyTurn;
+            const aTs = timestamps[a.session.gameId]?.lastMoveAt ?? 0;
+            const bTs = timestamps[b.session.gameId]?.lastMoveAt ?? 0;
+            return bTs - aTs;
+          });
+        const finishedGames = gameList.filter(e => e.gameState.winner);
 
-          {/* Games list */}
-          {gameList.length > 0 && (() => {
-            const timestamps = savedSessions.load();
-            const active = gameList
-              .filter(e => !e.gameState.winner)
-              .sort((a, b) => {
-                const aMyTurn = a.gameState.currentPlayer === a.session.myPlayer ? 1 : 0;
-                const bMyTurn = b.gameState.currentPlayer === b.session.myPlayer ? 1 : 0;
-                if (aMyTurn !== bMyTurn) return bMyTurn - aMyTurn; // my turn first
-                // Both in same bucket: newest lastMoveAt first (oldest waiting games sink to bottom)
-                const aTs = timestamps[a.session.gameId]?.lastMoveAt ?? 0;
-                const bTs = timestamps[b.session.gameId]?.lastMoveAt ?? 0;
-                return bTs - aTs;
-              });
-            const finished = gameList.filter(e => e.gameState.winner);
-
-            const statusText = (e: GameEntry) => {
-              if (e.gameState.winner) {
-                if (e.finishReason === 'timeout') return 'Won by timeout';
-                if (e.finishReason === 'resign') return 'Resigned';
-                return e.gameState.winner === e.session.myPlayer ? 'You won' : 'You lost';
-              }
-              return e.gameState.currentPlayer === e.session.myPlayer ? 'Your turn' : 'Waiting';
-            };
-            const statusClass = (e: GameEntry) => {
-              if (e.gameState.winner) return e.gameState.winner === e.session.myPlayer ? 'won' : 'lost';
-              return e.gameState.currentPlayer === e.session.myPlayer ? 'your-turn' : '';
-            };
-
-            const renderItem = (entry: GameEntry) => {
-              const { session, gameState } = entry;
-              const done = !!gameState.winner;
-              return (
-                <div key={session.gameId} className="game-list-item">
-                  <div className="game-list-info">
-                    <span className={`game-list-status ${statusClass(entry)}`}>
-                      {statusText(entry)}
-                    </span>
-                    <UserCard pubkey={session.opponentPubkey} size="sm" label="vs" />
-                  </div>
-                  <div className="game-list-actions">
-                    <button className="btn btn-small btn-primary" onClick={() => handleEnterGame(session.gameId)}>
-                      {done ? 'View' : 'Enter'}
+        const statusText = (e: GameEntry) => {
+          if (e.gameState.winner) {
+            if (e.finishReason === 'timeout') return 'Won by timeout';
+            if (e.finishReason === 'resign') return 'Resigned';
+            return e.gameState.winner === e.session.myPlayer ? 'You won' : 'You lost';
+          }
+          return e.gameState.currentPlayer === e.session.myPlayer ? 'Your turn' : 'Waiting';
+        };
+        const statusClass = (e: GameEntry) => {
+          if (e.gameState.winner) return e.gameState.winner === e.session.myPlayer ? 'won' : 'lost';
+          return e.gameState.currentPlayer === e.session.myPlayer ? 'your-turn' : '';
+        };
+        const renderItem = (entry: GameEntry) => {
+          const { session, gameState } = entry;
+          const done = !!gameState.winner;
+          return (
+            <div key={session.gameId} className="game-list-item">
+              <div className="game-list-info">
+                <span className={`game-list-status ${statusClass(entry)}`}>{statusText(entry)}</span>
+                <UserCard pubkey={session.opponentPubkey} size="sm" label="vs" />
+              </div>
+              <div className="game-list-actions">
+                <button className="btn btn-small btn-primary" onClick={() => handleEnterGame(session.gameId)}>
+                  {done ? 'View' : 'Enter'}
+                </button>
+                {done ? (
+                  <button className="btn btn-small btn-ghost" onClick={() => handleAbandonGame(session.gameId)}>
+                    Dismiss
+                  </button>
+                ) : confirmAbandon === session.gameId ? (
+                  <>
+                    <button className="btn btn-small btn-danger" onClick={() => handleAbandonGame(session.gameId)}>
+                      Confirm resign
                     </button>
-                    {done ? (
-                      <button className="btn btn-small btn-ghost" onClick={() => handleAbandonGame(session.gameId)}>
-                        Dismiss
-                      </button>
-                    ) : confirmAbandon === session.gameId ? (
-                      <>
-                        <button className="btn btn-small btn-danger" onClick={() => handleAbandonGame(session.gameId)}>
-                          Confirm resign
-                        </button>
-                        <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(null)}>
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(session.gameId)}>
-                        Resign
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            };
-
-            return (
-              <div className="game-list">
-                {active.length > 0 && (
-                  <>
-                    <p className="game-list-title">Active games</p>
-                    {active.map(renderItem)}
+                    <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(null)}>
+                      Cancel
+                    </button>
                   </>
-                )}
-                {finished.length > 0 && (
-                  <>
-                    <p className="game-list-title" style={{ marginTop: active.length > 0 ? '0.75rem' : 0 }}>Finished games</p>
-                    {finished.map(renderItem)}
-                  </>
+                ) : (
+                  <button className="btn btn-small btn-ghost" onClick={() => setConfirmAbandon(session.gameId)}>
+                    Resign
+                  </button>
                 )}
               </div>
-            );
-          })()}
+            </div>
+          );
+        };
 
-          {/* Matchmaking */}
-          <div className="seek-section">
-            {seeking ? (
-              <div className="seeking-status">
-                <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-                <span>Searching for opponent…</span>
-                <button className="btn btn-small btn-ghost" onClick={stopSeeking}>Cancel</button>
-              </div>
-            ) : (
-              <button className="btn btn-secondary" onClick={handleSeek}>
-                Find random opponent
-                <span className="btn-sub">match with another seeker on Nostr</span>
+        return (
+          <div className="screen lobby-screen">
+            <div className="identity-line">
+              <UserCard pubkey={myPubkey} size={isAnonymous ? 'md' : 'lg'} label="You" />
+              {!isAnonymous && (
+                <button
+                  className="btn btn-small btn-ghost"
+                  style={{ marginTop: '0.25rem' }}
+                  onClick={() => navigator.clipboard.writeText(npubFromPubkey(myPubkey))}
+                >Copy npub</button>
+              )}
+            </div>
+
+            {/* Main nav */}
+            <div className="lobby-nav">
+              <button
+                className={`lobby-nav-btn ${lobbySection === 'active' ? 'active' : ''} ${activeGames.length === 0 ? 'empty' : ''}`}
+                onClick={() => setLobbySection('active')}
+              >
+                Active games
+                {activeGames.length > 0 && <span className="lobby-nav-badge">{activeGames.length}</span>}
               </button>
+              <button
+                className={`lobby-nav-btn ${lobbySection === 'new' ? 'active' : ''}`}
+                onClick={() => setLobbySection('new')}
+              >
+                New game
+              </button>
+              <button
+                className={`lobby-nav-btn ${lobbySection === 'history' ? 'active' : ''} ${finishedGames.length === 0 ? 'empty' : ''}`}
+                onClick={() => setLobbySection('history')}
+              >
+                History
+                {finishedGames.length > 0 && <span className="lobby-nav-badge">{finishedGames.length}</span>}
+              </button>
+            </div>
+
+            {/* Active games */}
+            {lobbySection === 'active' && (
+              activeGames.length === 0 ? (
+                <div className="lobby-empty">
+                  <p>No active games yet.</p>
+                  <button className="btn btn-primary" onClick={() => setLobbySection('new')}>
+                    Start a new game
+                  </button>
+                </div>
+              ) : (
+                <div className="game-list">{activeGames.map(renderItem)}</div>
+              )
+            )}
+
+            {/* New game */}
+            {lobbySection === 'new' && (
+              <>
+                <div className="seek-section">
+                  {seeking ? (
+                    <div className="seeking-status">
+                      <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+                      <span>Searching for opponent…</span>
+                      <button className="btn btn-small btn-ghost" onClick={stopSeeking}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-secondary" onClick={handleSeek}>
+                      Find random opponent
+                      <span className="btn-sub">match with another seeker on Nostr</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="tabs">
+                  <button className={`tab ${newGameTab === 'create' ? 'active' : ''}`} onClick={() => setNewGameTab('create')}>
+                    Create game
+                  </button>
+                  <button className={`tab ${newGameTab === 'join' ? 'active' : ''}`} onClick={() => setNewGameTab('join')}>
+                    Join game
+                  </button>
+                </div>
+
+                {newGameTab === 'create' && (
+                  <div className="lobby-form">
+                    <label className="form-label">Opponent</label>
+                    <PlayerSearch
+                      selectedPubkey={selectedOpponentPubkey}
+                      onSelect={setSelectedOpponentPubkey}
+                      onClear={() => setSelectedOpponentPubkey(null)}
+                    />
+                    <button className="btn btn-primary" onClick={handleCreate}>
+                      Create game
+                    </button>
+                  </div>
+                )}
+
+                {newGameTab === 'join' && (
+                  <div className="lobby-form">
+                    <label className="form-label">Join code</label>
+                    <input
+                      className="form-input"
+                      placeholder="Paste join code…"
+                      value={joinCodeInput}
+                      onChange={e => setJoinCodeInput(e.target.value)}
+                    />
+                    <button className="btn btn-primary" onClick={handleJoin}>
+                      Join game
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* History */}
+            {lobbySection === 'history' && (
+              finishedGames.length === 0 ? (
+                <div className="lobby-empty">
+                  <p>No finished games yet.</p>
+                </div>
+              ) : (
+                <div className="game-list">{finishedGames.map(renderItem)}</div>
+              )
             )}
           </div>
-
-          <div className="tabs">
-            <button className={`tab ${lobbyTab === 'create' ? 'active' : ''}`} onClick={() => setLobbyTab('create')}>
-              Create game
-            </button>
-            <button className={`tab ${lobbyTab === 'join' ? 'active' : ''}`} onClick={() => setLobbyTab('join')}>
-              Join game
-            </button>
-          </div>
-
-          {lobbyTab === 'create' && (
-            <div className="lobby-form">
-              <label className="form-label">Opponent</label>
-              <PlayerSearch
-                selectedPubkey={selectedOpponentPubkey}
-                onSelect={setSelectedOpponentPubkey}
-                onClear={() => setSelectedOpponentPubkey(null)}
-              />
-              <button className="btn btn-primary" onClick={handleCreate}>
-                Create game
-              </button>
-            </div>
-          )}
-
-          {lobbyTab === 'join' && (
-            <div className="lobby-form">
-              <label className="form-label">Join code</label>
-              <input
-                className="form-input"
-                placeholder="Paste join code…"
-                value={joinCodeInput}
-                onChange={e => setJoinCodeInput(e.target.value)}
-              />
-              <button className="btn btn-primary" onClick={handleJoin}>
-                Join game
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Playing ── */}
       {phase === 'playing' && activeEntry && (
@@ -882,11 +914,6 @@ export default function App() {
                 </span>
               )}
             </div>
-            {activeEntry.gameState.lastMove && !activeEntry.gameState.winner && (
-              <div className="last-move">
-                Opponent's last move: {activeEntry.gameState.lastMove.notation}
-              </div>
-            )}
             <div className="game-players">
               <UserCard
                 pubkey={activeEntry.session.myPlayer === 1 ? activeEntry.session.myPubkey : activeEntry.session.opponentPubkey}

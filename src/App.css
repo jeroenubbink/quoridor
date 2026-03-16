@@ -297,6 +297,66 @@
   line-height: 1.5;
 }
 
+/* ── Lobby nav ───────────────────────────────────────────────────────────── */
+
+.lobby-nav {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 1.25rem;
+}
+
+.lobby-nav-btn {
+  flex: 1;
+  background: #2e2820;
+  border: 1px solid #5a4830;
+  border-radius: 8px;
+  color: #a89060;
+  padding: 0.7rem 0.4rem 0.55rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.lobby-nav-btn:hover { border-color: #8a6840; color: #c8a870; }
+
+.lobby-nav-btn.active {
+  border-color: #d4a843;
+  color: #d4a843;
+}
+
+.lobby-nav-btn.empty {
+  opacity: 0.45;
+}
+
+.lobby-nav-badge {
+  background: #d4a843;
+  color: #1a1610;
+  border-radius: 10px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.05rem 0.45rem;
+  min-width: 1.2rem;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.lobby-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 2.5rem 0;
+  color: #a89060;
+  font-size: 0.9rem;
+  width: 100%;
+}
+
 /* ── Matchmaking ─────────────────────────────────────────────────────────── */
 
 .seek-section {
