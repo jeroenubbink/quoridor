@@ -20,10 +20,12 @@ Two players, one pawn each, opposite sides of a 9×9 grid. First to reach the ot
 - **Nostr identity or anonymous play** — connect with a NIP-07 browser extension (Alby, nos2x, …) or jump in with an auto-generated anonymous name
 - **Invite a specific player** — search by name or paste an npub; NIP-50 full-text search via relay.nostr.band
 - **Random opponent matchmaking** — one-click seek; matched by pubkey ordering, no coordination needed
-- **Multiple simultaneous games** — all games live side by side in the lobby
+- **Multiple simultaneous games** — all games live side by side in the lobby, organised into Active / New / History tabs
 - **Session persistence** — sessions survive page reloads; reconnect picks up the latest state from relays
 - **Browser notifications** — get pinged when it's your turn
 - **NIP-05 verification** — display names and verified identifiers shown via NIP-01 kind-0 profiles
+- **Automatic timeout enforcement** — if an opponent does not move within 2 days the game resolves automatically; "no contest" if no moves were made at all
+- **Resign support** — either player can resign at any time; the opponent is notified immediately
 
 ---
 
