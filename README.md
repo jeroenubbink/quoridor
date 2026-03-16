@@ -19,7 +19,7 @@ Two players, one pawn each, opposite sides of a 9×9 grid. First to reach the ot
 - **Fully peer-to-peer** — game state lives on Nostr relays as NIP-44 encrypted kind-30078 events; no central server
 - **Nostr identity or anonymous play** — connect with a NIP-07 browser extension (Alby, nos2x, …) or jump in with an auto-generated anonymous name
 - **Invite a specific player** — search by name or paste an npub; NIP-50 full-text search via relay.nostr.band
-- **Random opponent matchmaking** — one-click seek; matched by pubkey ordering, no coordination needed
+- **Async random matchmaking** — seek events persist for 24 hours; you get matched whenever another seeker shows up, even if you're not online at the same time
 - **Multiple simultaneous games** — all games live side by side in the lobby, organised into Active / New / History tabs
 - **Session persistence** — sessions survive page reloads; reconnect picks up the latest state from relays
 - **Browser notifications** — get pinged when it's your turn
