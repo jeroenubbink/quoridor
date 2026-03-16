@@ -576,7 +576,7 @@ export default function App() {
       {phase === 'resume-prompt' && (() => {
         const sk = savedKey.load();
         const all = savedSessions.load();
-        const count = Object.keys(all).length;
+        const count = Object.values(all).filter(s => !s.finishReason).length;
         return (
           <div className="screen connect-screen">
             <p className="screen-subtitle">Previous session detected</p>
