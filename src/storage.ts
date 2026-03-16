@@ -28,7 +28,7 @@ export interface SavedSession {
   myPlayer: 1 | 2;
   joinCode: string;
   lastMoveAt?: number;      // ms timestamp of the most recent move (ours or opponent's)
-  finishReason?: 'timeout' | 'resign'; // set locally when we initiate the end
+  finishReason?: 'timeout' | 'resign' | 'no-contest';
 }
 
 export const savedSessions = {

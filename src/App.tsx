@@ -62,7 +62,7 @@ interface GameEntry {
   session: Session;
   gameState: GameState;
   opponentSeen: boolean;          // true once we receive the first event from the opponent
-  finishReason?: 'timeout' | 'resign'; // set locally when we initiate the end
+  finishReason?: 'timeout' | 'resign' | 'no-contest';
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -119,10 +119,7 @@ export default function App() {
     setTimeout(() => setCopiedId(prev => prev === id ? null : prev), 1500);
   };
 
-  // ── Timeout warning (for the currently active game) ─────────────────────────
-
-  const [timeoutWarning, setTimeoutWarning] = useState(false);
-  useEffect(() => setTimeoutWarning(false), [activeGameId]);
+  // ── Timeout ─────────────────────────────────────────────────────────────────
 
   // ── Cleanup all subscriptions on unmount ────────────────────────────────────
 
@@ -149,59 +146,70 @@ export default function App() {
     });
   };
 
-  // Fire the browser notification exactly once when the warning first appears.
-  useEffect(() => {
-    if (!timeoutWarning || !activeGameId) return;
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    new Notification('Quoridor — opponent overdue!', {
-      body: 'Your opponent has not moved in 2 days. You may declare yourself the winner.',
-      tag: `quoridor-timeout-${activeGameId}`,
-    });
-  }, [timeoutWarning, activeGameId]);
+  // Auto-resolve a single timed-out game.
+  const resolveTimeout = useCallback(async (gameId: string) => {
+    const entry = gamesRef.current[gameId];
+    if (!entry || entry.gameState.winner || entry.finishReason === 'no-contest') return;
+    const { session, gameState } = entry;
 
-  // ── Timeout check ───────────────────────────────────────────────────────────
+    const isNoContest = gameState.moveNumber === 0;
 
+    if (isNoContest) {
+      // No moves were made — mark as no contest locally.
+      subsRef.current.get(gameId)?.stop();
+      subsRef.current.delete(gameId);
+      setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], finishReason: 'no-contest' } }));
+      const ss = savedSessions.load()[gameId];
+      if (ss) savedSessions.upsert({ ...ss, finishReason: 'no-contest' });
+    } else {
+      // Opponent timed out — auto-win.
+      const win: GameState = { ...gameState, winner: session.myPlayer };
+      try {
+        await publishMove({
+          gameId,
+          p1Pubkey: session.myPlayer === 1 ? session.myPubkey : session.opponentPubkey,
+          p2Pubkey: session.myPlayer === 1 ? session.opponentPubkey : session.myPubkey,
+          myPlayer: session.myPlayer,
+          prevEventId: session.lastEventId,
+          state: win,
+        });
+      } catch { /* best-effort */ }
+      subsRef.current.get(gameId)?.stop();
+      subsRef.current.delete(gameId);
+      setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: win, finishReason: 'timeout' } }));
+      const ss = savedSessions.load()[gameId];
+      if (ss) savedSessions.upsert({ ...ss, finishReason: 'timeout' });
+    }
+
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(isNoContest ? 'Quoridor — game expired' : 'Quoridor — you win by timeout!', {
+        body: isNoContest ? 'No moves were made. Game marked as no contest.' : 'Your opponent did not move in time.',
+        tag: `quoridor-timeout-${gameId}`,
+      });
+    }
+  }, []);
+
+  // Periodically check all games for timeouts.
   const checkAllTimeouts = useCallback(() => {
     const all = savedSessions.load();
     for (const [gameId, entry] of Object.entries(gamesRef.current)) {
       const { session, gameState } = entry;
-      if (gameState.winner) continue;
-      if (gameState.currentPlayer === session.myPlayer) continue; // our turn
+      if (gameState.winner || entry.finishReason === 'no-contest') continue;
+      if (gameState.currentPlayer === session.myPlayer) continue;
       const ss = all[gameId];
       if (!ss?.lastMoveAt) continue;
       if (Date.now() - ss.lastMoveAt < TIMEOUT_MS) continue;
-
-      if (gameId === activeGameIdRef.current) {
-        setTimeoutWarning(true); // useEffect above fires the notification
-      } else {
-        // Background game — notify directly (no UI to update)
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Quoridor — opponent overdue!', {
-            body: 'Your opponent has not moved in 2 days.',
-            tag: `quoridor-timeout-${gameId}`,
-          });
-        }
-      }
+      void resolveTimeout(gameId);
     }
-  }, []);
+  }, [resolveTimeout]);
 
   // Run periodic timeout check while connected.
   useEffect(() => {
     if (phase !== 'lobby' && phase !== 'playing') return;
+    checkAllTimeouts(); // run immediately on connect
     const id = setInterval(checkAllTimeouts, 60_000);
     return () => clearInterval(id);
   }, [phase, checkAllTimeouts]);
-
-  // Check timeout when entering a game (in case it was already overdue).
-  useEffect(() => {
-    if (!activeGameId || phase !== 'playing') return;
-    const entry = gamesRef.current[activeGameId];
-    if (!entry || entry.gameState.winner) return;
-    if (entry.gameState.currentPlayer === entry.session.myPlayer) return;
-    const ss = savedSessions.load()[activeGameId];
-    if (ss?.lastMoveAt && Date.now() - ss.lastMoveAt >= TIMEOUT_MS) setTimeoutWarning(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGameId, phase]);
 
   // ── Subscribe helper ────────────────────────────────────────────────────────
 
@@ -219,7 +227,6 @@ export default function App() {
           if (!entry || incoming.moveNumber <= entry.gameState.moveNumber) return prev;
           const all = savedSessions.load();
           if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
-          if (gameId === activeGameIdRef.current) setTimeoutWarning(false);
           return { ...prev, [gameId]: { ...entry, gameState: incoming, opponentSeen: true } };
         });
         if (incoming.currentPlayer === myPlayer) notifyTurn(gameId);
@@ -475,7 +482,6 @@ export default function App() {
       });
       const all = savedSessions.load();
       if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
-      setTimeoutWarning(false);
     } catch (e) {
       setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState } }));
       setError(e instanceof Error ? e.message : errorLabel);
@@ -542,30 +548,6 @@ export default function App() {
     }
   };
 
-  // ── Claim win (timeout) ─────────────────────────────────────────────────────
-
-  const handleClaimWin = async (gameId: string) => {
-    const entry = gamesRef.current[gameId];
-    if (!entry || entry.gameState.winner) return;
-    const { session, gameState } = entry;
-    const win: GameState = { ...gameState, winner: session.myPlayer };
-    try {
-      await publishMove({
-        gameId,
-        p1Pubkey: session.myPlayer === 1 ? session.myPubkey : session.opponentPubkey,
-        p2Pubkey: session.myPlayer === 1 ? session.opponentPubkey : session.myPubkey,
-        myPlayer: session.myPlayer,
-        prevEventId: session.lastEventId,
-        state: win,
-      });
-    } catch { /* best-effort */ }
-    subsRef.current.get(gameId)?.stop();
-    subsRef.current.delete(gameId);
-    setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: win, finishReason: 'timeout' } }));
-    const ss = savedSessions.load()[gameId];
-    if (ss) savedSessions.upsert({ ...ss, finishReason: 'timeout' });
-    if (activeGameId === gameId) { setActiveGameId(null); setPhase('lobby'); }
-  };
 
   // ── Detect saved session on first load ──────────────────────────────────────
 
@@ -720,8 +702,9 @@ export default function App() {
       {/* ── Lobby ── */}
       {phase === 'lobby' && (() => {
         const timestamps = savedSessions.load();
+        const isFinished = (e: GameEntry) => !!e.gameState.winner || e.finishReason === 'no-contest';
         const activeGames = gameList
-          .filter(e => !e.gameState.winner)
+          .filter(e => !isFinished(e))
           .sort((a, b) => {
             const aMyTurn = a.gameState.currentPlayer === a.session.myPlayer ? 1 : 0;
             const bMyTurn = b.gameState.currentPlayer === b.session.myPlayer ? 1 : 0;
@@ -730,9 +713,10 @@ export default function App() {
             const bTs = timestamps[b.session.gameId]?.lastMoveAt ?? 0;
             return bTs - aTs;
           });
-        const finishedGames = gameList.filter(e => e.gameState.winner);
+        const finishedGames = gameList.filter(isFinished);
 
         const statusText = (e: GameEntry) => {
+          if (e.finishReason === 'no-contest') return 'No contest';
           if (e.gameState.winner) {
             if (e.finishReason === 'timeout') return 'Won by timeout';
             if (e.finishReason === 'resign') return 'Resigned';
@@ -741,12 +725,13 @@ export default function App() {
           return e.gameState.currentPlayer === e.session.myPlayer ? 'Your turn' : 'Opponent\'s turn';
         };
         const statusClass = (e: GameEntry) => {
+          if (e.finishReason === 'no-contest') return 'lost';
           if (e.gameState.winner) return e.gameState.winner === e.session.myPlayer ? 'won' : 'lost';
           return e.gameState.currentPlayer === e.session.myPlayer ? 'your-turn' : '';
         };
         const renderItem = (entry: GameEntry) => {
-          const { session, gameState } = entry;
-          const done = !!gameState.winner;
+          const { session } = entry;
+          const done = isFinished(entry);
           return (
             <div key={session.gameId} className="game-list-item">
               <div className="game-list-info">
@@ -908,12 +893,15 @@ export default function App() {
         <div className="screen playing-screen">
           <div className="game-header">
             <div className="game-status">
-              {activeEntry.gameState.winner ? (
+              {activeEntry.finishReason === 'no-contest' ? (
+                <span className="waiting">No contest</span>
+              ) : activeEntry.gameState.winner ? (
                 <>
                   <span className={`pname p${activeEntry.gameState.winner}-color`}>
                     {activeEntry.gameState.winner === activeEntry.session.myPlayer ? 'You' : 'Opponent'}
                   </span>{' '}
                   win{activeEntry.gameState.winner === activeEntry.session.myPlayer ? '!' : 's.'}
+                  {activeEntry.finishReason === 'timeout' && ' (timeout)'}
                 </>
               ) : activeEntry.gameState.currentPlayer === activeEntry.session.myPlayer ? (
                 <span className={`pname p${activeEntry.session.myPlayer}-color`}>Your turn</span>
@@ -950,16 +938,6 @@ export default function App() {
             )}
           </div>
 
-          {timeoutWarning && !activeEntry.gameState.winner && (
-            <div className="timeout-banner">
-              <span>⏰ Opponent has not moved in over 2 days.</span>
-              <button className="btn btn-small btn-primary" onClick={() => activeGameId && handleClaimWin(activeGameId)}>
-                Claim win
-              </button>
-              <button className="error-close" onClick={() => setTimeoutWarning(false)}>✕</button>
-            </div>
-          )}
-
           <GameBoard
             state={activeEntry.gameState}
             myPlayer={activeEntry.session.myPlayer}
@@ -969,7 +947,7 @@ export default function App() {
 
           <div className="game-footer">
             <button className="btn btn-secondary" onClick={handleBackToLobby}>← Games</button>
-            {!activeEntry.gameState.winner && (
+            {!activeEntry.gameState.winner && activeEntry.finishReason !== 'no-contest' && (
               confirmAbandon === activeGameId ? (
                 <>
                   <button className="btn btn-danger" onClick={() => handleAbandonGame(activeGameId!)}>
