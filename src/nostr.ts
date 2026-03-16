@@ -399,7 +399,7 @@ export async function publishMove(opts: PublishOpts): Promise<string> {
 // ─── Matchmaking ──────────────────────────────────────────────────────────────
 
 /** How long a seek event is considered fresh. */
-export const SEEK_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
+export const SEEK_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** Publish a "looking for game" replaceable event. Returns the event id. */
 export async function publishSeek(): Promise<string> {
@@ -430,6 +430,10 @@ export async function cancelSeek(seekEventId: string): Promise<void> {
 /**
  * Subscribe to seeks from other players. Only yields events fresher than
  * SEEK_EXPIRY_MS. Excludes your own pubkey.
+ *
+ * Stored (pre-EOSE) events are collected first, then the oldest one is picked
+ * so players who have been waiting longest get matched first. Real-time events
+ * arriving after EOSE are matched immediately.
  */
 export function subscribeToSeeks(
   excludePubkey: string,
@@ -441,12 +445,31 @@ export function subscribeToSeeks(
     { kinds: [GAME_KIND as number], '#t': ['quoridor-seek'], since },
     { closeOnEose: false, groupable: false },
   );
+
+  // Collect stored seeks until EOSE so we can pick the oldest one.
+  const pending: { pubkey: string; createdAt: number }[] = [];
+  let eoseReceived = false;
+
   sub.on('event', (ev: NDKEvent) => {
     if (ev.pubkey === excludePubkey) return;
     const age = Date.now() - (ev.created_at ?? 0) * 1000;
     if (age > SEEK_EXPIRY_MS) return;
-    onSeek(ev.pubkey);
+
+    if (!eoseReceived) {
+      pending.push({ pubkey: ev.pubkey, createdAt: ev.created_at ?? 0 });
+    } else {
+      onSeek(ev.pubkey);
+    }
   });
+
+  sub.on('eose', () => {
+    eoseReceived = true;
+    if (pending.length === 0) return;
+    // Match the player who has been waiting longest.
+    pending.sort((a, b) => a.createdAt - b.createdAt);
+    onSeek(pending[0].pubkey);
+  });
+
   return sub;
 }
 
