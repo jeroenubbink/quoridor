@@ -48,6 +48,11 @@ function randomUUID(): string {
 
 type Phase = 'disconnected' | 'resume-prompt' | 'reconnecting' | 'connecting' | 'lobby' | 'playing';
 
+interface SeekEntry {
+  id: string;         // local UUID, used as d-tag suffix and React key
+  eventId: string | null; // Nostr event id (null while publishing)
+}
+
 interface Session {
   myPubkey: string;
   opponentPubkey: string;
@@ -96,11 +101,12 @@ export default function App() {
   const subsRef = useRef<Map<string, NDKSubscription>>(new Map());
 
   // ── Matchmaking state ───────────────────────────────────────────────────────
-  const [seeking, setSeeking] = useState(false);
-  const seekEventIdRef  = useRef<string | null>(null);
-  const seekSubRef      = useRef<NDKSubscription | null>(null);
-  const inviteSubRef    = useRef<NDKSubscription | null>(null);
-  const matchedRef      = useRef(false); // prevents double-match race
+  const [seeks, setSeeks] = useState<SeekEntry[]>([]);
+  const seeksRef            = useRef<SeekEntry[]>([]);
+  seeksRef.current = seeks;
+  const availableSeekIdsRef = useRef<Set<string>>(new Set());
+  const seekSubRef          = useRef<NDKSubscription | null>(null);
+  const inviteSubRef        = useRef<NDKSubscription | null>(null);
 
   // ── Lobby form state ────────────────────────────────────────────────────────
 
@@ -127,6 +133,9 @@ export default function App() {
     subsRef.current.forEach(sub => sub.stop());
     seekSubRef.current?.stop();
     inviteSubRef.current?.stop();
+    for (const seek of seeksRef.current) {
+      if (seek.eventId) cancelSeek(seek.eventId);
+    }
   }, []);
 
   // ── Notifications ───────────────────────────────────────────────────────────
@@ -236,53 +245,72 @@ export default function App() {
 
   // ── Matchmaking ─────────────────────────────────────────────────────────────
 
-  const stopSeeking = useCallback(() => {
+  // Stop and clean up seek subscriptions (not the seek events themselves).
+  const stopSeekSubscriptions = useCallback(() => {
     seekSubRef.current?.stop();
     inviteSubRef.current?.stop();
     seekSubRef.current = null;
     inviteSubRef.current = null;
-    if (seekEventIdRef.current) {
-      cancelSeek(seekEventIdRef.current);
-      seekEventIdRef.current = null;
-    }
-    matchedRef.current = false;
-    setSeeking(false);
   }, []);
 
-  const handleSeek = async () => {
-    setError('');
-    setSeeking(true);
-    matchedRef.current = false;
+  // Claim one available seek slot; returns the seek id or null if none left.
+  const claimSeekSlot = useCallback((): string | null => {
+    const id = availableSeekIdsRef.current.values().next().value;
+    if (id === undefined) return null;
+    availableSeekIdsRef.current.delete(id);
+    setSeeks(prev => prev.filter(s => s.id !== id));
+    if (availableSeekIdsRef.current.size === 0) stopSeekSubscriptions();
+    return id;
+  }, [stopSeekSubscriptions]);
 
-    await requestNotifyPermission();
-
-    let seekId: string;
-    try {
-      seekId = await publishSeek();
-      seekEventIdRef.current = seekId;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to publish seek');
-      setSeeking(false);
-      return;
-    }
-
+  // Start seek + invite subscriptions (only called when first seek is added).
+  const startSeekSubscriptions = useCallback(() => {
     // When someone invites us (they are P1, we are P2) — auto-join their game.
-    inviteSubRef.current = subscribeToInvites(myPubkey, async (joinCode, _inviterPubkey) => {
-      if (matchedRef.current) return;
-      matchedRef.current = true;
-      stopSeeking();
+    inviteSubRef.current = subscribeToInvites(myPubkey, async (joinCode) => {
+      if (claimSeekSlot() === null) return;
       await doJoin(joinCode);
     });
 
     // When we see another seeker: lower pubkey becomes P1 and creates the game.
     seekSubRef.current = subscribeToSeeks(myPubkey, async (opponentPubkey) => {
-      if (matchedRef.current) return;
       if (myPubkey > opponentPubkey) return; // they will invite us — wait
-      matchedRef.current = true;
-      stopSeeking();
+      if (claimSeekSlot() === null) return;
       await doCreate(opponentPubkey, 1); // creator moves first for random games
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myPubkey, claimSeekSlot]);
+
+  const handleAddSeek = async () => {
+    if (seeksRef.current.length >= 4) return;
+    setError('');
+    await requestNotifyPermission();
+
+    const id = randomUUID();
+    const entry: SeekEntry = { id, eventId: null };
+    availableSeekIdsRef.current.add(id);
+    setSeeks(prev => [...prev, entry]);
+
+    // Start subscriptions only when adding the very first seek.
+    if (seeksRef.current.length === 0) startSeekSubscriptions();
+
+    try {
+      const eventId = await publishSeek(id);
+      setSeeks(prev => prev.map(s => s.id === id ? { ...s, eventId } : s));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to publish seek');
+      availableSeekIdsRef.current.delete(id);
+      setSeeks(prev => prev.filter(s => s.id !== id));
+      if (availableSeekIdsRef.current.size === 0) stopSeekSubscriptions();
+    }
   };
+
+  const handleCancelSeek = useCallback((id: string) => {
+    availableSeekIdsRef.current.delete(id);
+    const seek = seeksRef.current.find(s => s.id === id);
+    if (seek?.eventId) cancelSeek(seek.eventId);
+    setSeeks(prev => prev.filter(s => s.id !== id));
+    if (availableSeekIdsRef.current.size === 0) stopSeekSubscriptions();
+  }, [stopSeekSubscriptions]);
 
   // Shared helpers used by both manual lobby and matchmaking.
 
@@ -410,7 +438,6 @@ export default function App() {
   const handleBackToLobby = () => {
     setActiveGameId(null);
     setError('');
-    stopSeeking();
     setPhase('lobby');
   };
 
@@ -819,15 +846,16 @@ export default function App() {
             {lobbySection === 'new' && (
               <>
                 <div className="seek-section">
-                  {seeking ? (
-                    <div className="seeking-status">
+                  {seeks.map(seek => (
+                    <div key={seek.id} className="seeking-status">
                       <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
                       <span>Searching for opponent…</span>
-                      <button className="btn btn-small btn-ghost" onClick={stopSeeking}>Cancel</button>
+                      <button className="btn btn-small btn-ghost" onClick={() => handleCancelSeek(seek.id)}>Cancel</button>
                     </div>
-                  ) : (
-                    <button className="btn btn-secondary" onClick={handleSeek}>
-                      Find random opponent
+                  ))}
+                  {seeks.length < 4 && (
+                    <button className="btn btn-secondary" onClick={handleAddSeek}>
+                      {seeks.length === 0 ? 'Find random opponent' : 'Search for another opponent'}
                       <span className="btn-sub">match with another seeker on Nostr</span>
                     </button>
                   )}

@@ -402,12 +402,12 @@ export async function publishMove(opts: PublishOpts): Promise<string> {
 export const SEEK_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** Publish a "looking for game" replaceable event. Returns the event id. */
-export async function publishSeek(): Promise<string> {
+export async function publishSeek(seekId: string): Promise<string> {
   const ndk = getNdk();
   const event = new NDKEvent(ndk);
   event.kind = GAME_KIND;
   event.tags = [
-    ['d', 'quoridor-seek'],
+    ['d', `quoridor-seek-${seekId}`],
     ['t', 'quoridor'],
     ['t', 'quoridor-seek'],
   ];
@@ -457,7 +457,7 @@ export function subscribeToSeeks(
     flushed = true;
     if (pending.length === 0) return;
     pending.sort((a, b) => a.createdAt - b.createdAt);
-    onSeek(pending[0].pubkey);
+    for (const { pubkey } of pending) onSeek(pubkey);
   };
 
   const flushTimer = setTimeout(flush, 3000);
