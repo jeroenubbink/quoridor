@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { uniqueNamesGenerator, adjectives, colors, animals } from 'unique-names-generator';
 import './App.css';
 import { GameBoard } from './GameBoard';
@@ -113,11 +113,11 @@ export default function App() {
   const [confirmAbandon, setConfirmAbandon] = useState<string | null>(null); // gameId pending confirm
   const [copiedId, setCopiedId] = useState<string | null>(null); // tracks which button shows "Copied!"
 
-  const copyWithFeedback = (text: string, id: string) => {
+  const copyWithFeedback = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(prev => prev === id ? null : prev), 1500);
-  };
+  }, []);
 
   // ── Timeout ─────────────────────────────────────────────────────────────────
 
@@ -154,12 +154,13 @@ export default function App() {
 
     const isNoContest = gameState.moveNumber === 0;
 
+    const ss = savedSessions.load()[gameId];
+    subsRef.current.get(gameId)?.stop();
+    subsRef.current.delete(gameId);
+
     if (isNoContest) {
       // No moves were made — mark as no contest locally.
-      subsRef.current.get(gameId)?.stop();
-      subsRef.current.delete(gameId);
       setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], finishReason: 'no-contest' } }));
-      const ss = savedSessions.load()[gameId];
       if (ss) savedSessions.upsert({ ...ss, finishReason: 'no-contest' });
     } else {
       // Opponent timed out — auto-win.
@@ -174,10 +175,7 @@ export default function App() {
           state: win,
         });
       } catch { /* best-effort */ }
-      subsRef.current.get(gameId)?.stop();
-      subsRef.current.delete(gameId);
       setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: win, finishReason: 'timeout' } }));
-      const ss = savedSessions.load()[gameId];
       if (ss) savedSessions.upsert({ ...ss, finishReason: 'timeout' });
     }
 
@@ -561,6 +559,7 @@ export default function App() {
 
   const activeEntry = activeGameId ? games[activeGameId] : null;
   const gameList = Object.values(games);
+  const sessionTimestamps = useMemo(() => savedSessions.load(), [games]);
 
   return (
     <div className="app">
@@ -701,7 +700,7 @@ export default function App() {
 
       {/* ── Lobby ── */}
       {phase === 'lobby' && (() => {
-        const timestamps = savedSessions.load();
+        const timestamps = sessionTimestamps;
         const isFinished = (e: GameEntry) => !!e.gameState.winner || e.finishReason === 'no-contest';
         const activeGames = gameList
           .filter(e => !isFinished(e))

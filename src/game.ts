@@ -197,27 +197,10 @@ export function validateIncomingState(
   incoming: GameState,
   expectedMover: Player,
 ): boolean {
-  // Forfeit/timeout: no board change, only winner set
-  if (incoming.moveNumber === current.moveNumber) {
-    // Accept if winner is set to us (the receiving player = 3 - expectedMover)
-    const receiver = (3 - expectedMover) as Player;
-    if (incoming.winner !== receiver) return false;
-    // Verify nothing else changed
-    if (incoming.walls[0] !== current.walls[0] || incoming.walls[1] !== current.walls[1]) return false;
-    for (let r = 0; r < GRID; r++)
-      for (let c = 0; c < GRID; c++)
-        if (current.board[r][c] !== incoming.board[r][c]) return false;
-    return true;
-  }
-
-  // Must be the next move in sequence
-  if (incoming.moveNumber !== current.moveNumber + 1) return false;
-  // Must have been the opponent's turn
-  if (current.currentPlayer !== expectedMover) return false;
   // winner field must be null, 1, or 2
   if (incoming.winner !== null && incoming.winner !== 1 && incoming.winner !== 2) return false;
 
-  // Diff the boards
+  // Diff the boards — single pass, reused for all cases below
   const diffs: [number, number, number, number][] = [];
   for (let r = 0; r < GRID; r++) {
     for (let c = 0; c < GRID; c++) {
@@ -226,6 +209,21 @@ export function validateIncomingState(
       }
     }
   }
+
+  // Forfeit/timeout: no board change, only winner set
+  if (incoming.moveNumber === current.moveNumber) {
+    if (diffs.length !== 0) return false;
+    // Accept if winner is set to us (the receiving player = 3 - expectedMover)
+    const receiver = (3 - expectedMover) as Player;
+    if (incoming.winner !== receiver) return false;
+    if (incoming.walls[0] !== current.walls[0] || incoming.walls[1] !== current.walls[1]) return false;
+    return true;
+  }
+
+  // Must be the next move in sequence
+  if (incoming.moveNumber !== current.moveNumber + 1) return false;
+  // Must have been the opponent's turn
+  if (current.currentPlayer !== expectedMover) return false;
 
   if (diffs.length === 2) {
     // Pawn move: one cell cleared, one filled with mover's value
