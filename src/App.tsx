@@ -104,11 +104,20 @@ export default function App() {
 
   // ── Lobby form state ────────────────────────────────────────────────────────
 
-  const [lobbySection, setLobbySection] = useState<'active' | 'new' | 'history'>('active');
+  const [lobbySection, setLobbySection] = useState<'active' | 'new' | 'history'>(
+    Object.keys(savedSessions.load()).length > 0 ? 'active' : 'new'
+  );
   const [newGameTab, setNewGameTab] = useState<'create' | 'join'>('create');
   const [selectedOpponentPubkey, setSelectedOpponentPubkey] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [confirmAbandon, setConfirmAbandon] = useState<string | null>(null); // gameId pending confirm
+  const [copiedId, setCopiedId] = useState<string | null>(null); // tracks which button shows "Copied!"
+
+  const copyWithFeedback = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(prev => prev === id ? null : prev), 1500);
+  };
 
   // ── Timeout warning (for the currently active game) ─────────────────────────
 
@@ -729,7 +738,7 @@ export default function App() {
             if (e.finishReason === 'resign') return 'Resigned';
             return e.gameState.winner === e.session.myPlayer ? 'You won' : 'You lost';
           }
-          return e.gameState.currentPlayer === e.session.myPlayer ? 'Your turn' : 'Waiting';
+          return e.gameState.currentPlayer === e.session.myPlayer ? 'Your turn' : 'Opponent\'s turn';
         };
         const statusClass = (e: GameEntry) => {
           if (e.gameState.winner) return e.gameState.winner === e.session.myPlayer ? 'won' : 'lost';
@@ -779,8 +788,8 @@ export default function App() {
                 <button
                   className="btn btn-small btn-ghost"
                   style={{ marginTop: '0.25rem' }}
-                  onClick={() => navigator.clipboard.writeText(npubFromPubkey(myPubkey))}
-                >Copy npub</button>
+                  onClick={() => copyWithFeedback(npubFromPubkey(myPubkey), 'npub')}
+                >{copiedId === 'npub' ? 'Copied!' : 'Copy npub'}</button>
               )}
             </div>
 
@@ -935,8 +944,8 @@ export default function App() {
                 <code className="join-code">{activeEntry.session.joinCode}</code>
                 <button
                   className="btn btn-small"
-                  onClick={() => navigator.clipboard.writeText(activeEntry.session.joinCode)}
-                >Copy</button>
+                  onClick={() => copyWithFeedback(activeEntry.session.joinCode, 'joincode')}
+                >{copiedId === 'joincode' ? 'Copied!' : 'Copy'}</button>
               </div>
             )}
           </div>

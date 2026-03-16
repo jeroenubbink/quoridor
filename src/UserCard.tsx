@@ -27,10 +27,11 @@ function pubkeyHue(pubkey: string): number {
 interface AvatarProps {
   pubkey: string;
   picture: string | null;
+  displayName: string | null;
   size: number; // px
 }
 
-function Avatar({ pubkey, picture, size }: AvatarProps) {
+function Avatar({ pubkey, picture, displayName, size }: AvatarProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const hue = pubkeyHue(pubkey);
 
@@ -57,7 +58,7 @@ function Avatar({ pubkey, picture, size }: AvatarProps) {
         fontSize: size * 0.42,
       }}
     >
-      {pubkey.slice(0, 1).toUpperCase()}
+      {(displayName ?? '?')[0].toUpperCase()}
     </div>
   );
 }
@@ -87,7 +88,7 @@ export function UserCard({ pubkey, size = 'sm', label, playerColor }: UserCardPr
 
   return (
     <div className={`user-card user-card-${size}`}>
-      <Avatar pubkey={pubkey} picture={profile?.picture ?? null} size={avatarSize} />
+      <Avatar pubkey={pubkey} picture={profile?.picture ?? null} displayName={profile?.displayName ?? null} size={avatarSize} />
       <div className="user-card-body">
         {label && (
           <span className={`user-card-label${playerColor ? ` p${playerColor}-color` : ''}`}>

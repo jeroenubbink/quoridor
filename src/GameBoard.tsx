@@ -65,13 +65,14 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
       if (pendingWall === key) {
         // Second tap on same slot → place the wall
         const cells = wallCellsFromSlot(row, col);
-        if (isValidWall(board, cells)) onWallPlace(cells);
+        if (cells && isValidWall(board, cells)) onWallPlace(cells);
         setPendingWall(null);
         setHoveredWall(null);
       } else {
         // First tap (or moved to a different slot) → preview only
         setPendingWall(key);
-        setHoveredWall(wallCellsFromSlot(row, col));
+        const cells = wallCellsFromSlot(row, col);
+        setHoveredWall(cells);
       }
     }
   };
@@ -88,14 +89,15 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
     } else if (walls[currentPlayer - 1] > 0) {
       // Mouse: hover already shows the preview — click places immediately
       const cells = wallCellsFromSlot(row, col);
-      if (isValidWall(board, cells)) onWallPlace(cells);
+      if (cells && isValidWall(board, cells)) onWallPlace(cells);
     }
   };
 
   // Mouse hover preview (desktop only; touch devices don't fire real mouseenter)
   const handleWallEnter = (row: number, col: number) => {
     if (!isMyTurn) return;
-    setHoveredWall(wallCellsFromSlot(row, col));
+    const cells = wallCellsFromSlot(row, col);
+    if (cells) setHoveredWall(cells);
   };
 
   const clearPreview = () => { setHoveredWall(null); setPendingWall(null); };

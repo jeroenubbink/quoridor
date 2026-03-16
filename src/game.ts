@@ -125,11 +125,17 @@ export function hasPath(board: Board, player: Player): boolean {
 export function wallCellsFromSlot(row: number, col: number): [number, number][] | null {
   if (row % 2 === 1 && col % 2 === 0) {         // horizontal slot
     const s = Math.min(col, GRID - 3);
-    return [[row, s], [row, s + 1], [row, s + 2]];
+    if (s < 0) return null;
+    const triplet: [number, number][] = [[row, s], [row, s + 1], [row, s + 2]];
+    if (!triplet.some(([, c]) => c === col)) return null;
+    return triplet;
   }
   if (row % 2 === 0 && col % 2 === 1) {         // vertical slot
     const s = Math.min(row, GRID - 3);
-    return [[s, col], [s + 1, col], [s + 2, col]];
+    if (s < 0) return null;
+    const triplet: [number, number][] = [[s, col], [s + 1, col], [s + 2, col]];
+    if (!triplet.some(([r]) => r === row)) return null;
+    return triplet;
   }
   return null;
 }
@@ -191,6 +197,19 @@ export function validateIncomingState(
   incoming: GameState,
   expectedMover: Player,
 ): boolean {
+  // Forfeit/timeout: no board change, only winner set
+  if (incoming.moveNumber === current.moveNumber) {
+    // Accept if winner is set to us (the receiving player = 3 - expectedMover)
+    const receiver = (3 - expectedMover) as Player;
+    if (incoming.winner !== receiver) return false;
+    // Verify nothing else changed
+    if (incoming.walls[0] !== current.walls[0] || incoming.walls[1] !== current.walls[1]) return false;
+    for (let r = 0; r < GRID; r++)
+      for (let c = 0; c < GRID; c++)
+        if (current.board[r][c] !== incoming.board[r][c]) return false;
+    return true;
+  }
+
   // Must be the next move in sequence
   if (incoming.moveNumber !== current.moveNumber + 1) return false;
   // Must have been the opponent's turn

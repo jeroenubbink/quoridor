@@ -542,7 +542,8 @@
   border: 1px solid #5a4830;
   border-radius: 6px;
   z-index: 100;
-  overflow: hidden;
+  overflow-y: auto;
+  max-height: 240px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 
