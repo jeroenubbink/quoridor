@@ -752,7 +752,11 @@ export default function App() {
             const bTs = timestamps[b.session.gameId]?.lastMoveAt ?? 0;
             return bTs - aTs;
           });
-        const finishedGames = gameList.filter(isFinished);
+        const finishedGames = gameList.filter(isFinished).sort((a, b) => {
+          const aTs = timestamps[a.session.gameId]?.lastMoveAt ?? 0;
+          const bTs = timestamps[b.session.gameId]?.lastMoveAt ?? 0;
+          return bTs - aTs;
+        });
 
         const statusText = (e: GameEntry) => {
           if (e.finishReason === 'no-contest') return 'No contest';
