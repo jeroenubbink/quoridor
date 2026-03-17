@@ -35,7 +35,7 @@ export function getNdk(): NDK {
 
 async function initNdk(signer: NDKNip07Signer | NDKPrivateKeySigner, autoConnectUserRelays: boolean): Promise<NDK> {
   if (_ndk) {
-    try { _ndk.pool?.destroy(); } catch { /* best-effort cleanup */ }
+    try { _ndk.pool?.relays.forEach(r => r.disconnect()); } catch { /* best-effort cleanup */ }
   }
   const ndk = new NDK({
     explicitRelayUrls: BOOTSTRAP_RELAYS,
