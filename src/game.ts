@@ -5,7 +5,7 @@ export const GRID = BOARD_SIZE * 2 - 1;          // 17
 export const CENTER_COL = BOARD_SIZE - 1;          // 8  (cell col 4)
 export const WALLS_PER_PLAYER = 10;
 export const WALL = 1;
-export const GAME_VERSION = 1;
+export const GAME_VERSION = 2;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -25,9 +25,12 @@ import {
   subscribeToGame,
   publishSeek,
   cancelSeek,
-  subscribeToSeeks,
+  subscribeToSeekList,
+  fetchSeekEvent,
+  cancelOwnStaleSeeks,
   publishInvite,
   subscribeToInvites,
+  type SeekListEntry,
 } from './nostr';
 import { UserCard, useProfile } from './UserCard';
 import { PlayerSearch } from './PlayerSearch';
@@ -55,6 +58,7 @@ type Phase = 'disconnected' | 'resume-prompt' | 'reconnecting' | 'connecting' | 
 interface SeekEntry {
   id: string;         // local UUID, used as d-tag suffix and React key
   eventId: string | null; // Nostr event id (null while publishing)
+  refreshIntervalId: ReturnType<typeof setInterval> | null;
 }
 
 interface Session {
@@ -73,6 +77,8 @@ interface GameEntry {
   opponentSeen: boolean;          // true once we receive the first event from the opponent
   finishReason?: 'timeout' | 'resign' | 'no-contest';
   opponentLastMove?: OpponentMove;
+  originSeekDTag?: string;        // set when game was started by picking from seek list
+  seekGone?: boolean;             // set if race-check finds the seek no longer exists
 }
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
@@ -80,6 +86,30 @@ interface GameEntry {
 function OpponentName({ pubkey }: { pubkey: string }) {
   const profile = useProfile(pubkey);
   return <>{profile?.displayName ?? 'Opponent'}</>;
+}
+
+// ─── Seek list helpers ────────────────────────────────────────────────────────
+
+function relTime(ts: number): string {
+  const diff = Math.floor(Date.now() / 1000 - ts);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function SeekRow({ entry, onMatch }: { entry: SeekListEntry; onMatch: () => void }) {
+  return (
+    <div className="seek-row">
+      <div className="seek-row-info">
+        <UserCard pubkey={entry.pubkey} size="sm" />
+        <span className="seek-row-time">{relTime(entry.createdAt)}</span>
+      </div>
+      <button className="btn btn-small btn-primary" onClick={onMatch}>
+        Match
+      </button>
+    </div>
+  );
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -121,6 +151,11 @@ export default function App() {
   const seekSubRef          = useRef<NDKSubscription | null>(null);
   const inviteSubRef        = useRef<NDKSubscription | null>(null);
 
+  // Seek list (live, keyed by pubkey for easy upsert).
+  const [seekList, setSeekList] = useState<Record<string, SeekListEntry>>({});
+  const seekListSubRef = useRef<NDKSubscription | null>(null);
+  const [seekPage, setSeekPage] = useState(0);
+
   // ── Lobby form state ────────────────────────────────────────────────────────
 
   const [lobbySection, setLobbySection] = useState<'active' | 'new' | 'history'>(
@@ -155,7 +190,9 @@ export default function App() {
     subsRef.current.forEach(sub => sub.stop());
     seekSubRef.current?.stop();
     inviteSubRef.current?.stop();
+    seekListSubRef.current?.stop();
     for (const seek of seeksRef.current) {
+      if (seek.refreshIntervalId !== null) clearInterval(seek.refreshIntervalId);
       if (seek.eventId) cancelSeek(seek.eventId);
     }
   }, []);
@@ -240,6 +277,24 @@ export default function App() {
     return () => clearInterval(id);
   }, [phase, checkAllTimeouts]);
 
+  // Subscribe to seek list while in lobby.
+  useEffect(() => {
+    if (phase !== 'lobby' || !myPubkey) return;
+    setSeekList({});
+    setSeekPage(0);
+
+    // Cancel any orphaned seek events left by closed/reloaded tabs, but only when
+    // we have no actively-tracked seek of our own (avoids cancelling a live one).
+    if (seeksRef.current.length === 0) {
+      cancelOwnStaleSeeks(myPubkey).catch(() => {});
+    }
+
+    seekListSubRef.current = subscribeToSeekList(entry => {
+      setSeekList(prev => ({ ...prev, [entry.pubkey]: entry }));
+    });
+    return () => { seekListSubRef.current?.stop(); seekListSubRef.current = null; };
+  }, [phase, myPubkey]);
+
   // ── Subscribe helper ────────────────────────────────────────────────────────
 
   const addSubscription = useCallback((gameId: string, myPlayer: Player, opponentPubkey: string) => {
@@ -287,6 +342,10 @@ export default function App() {
     inviteSubRef.current = null;
   }, []);
 
+  const clearSeekRefresh = useCallback((slot: SeekEntry) => {
+    if (slot.refreshIntervalId !== null) clearInterval(slot.refreshIntervalId);
+  }, []);
+
   // Claim one available seek slot; returns the full SeekEntry or null if none left.
   // With targetId: claims that specific seek (invite path).
   // Without targetId: claims any available seek (creator path).
@@ -296,44 +355,41 @@ export default function App() {
       : availableSeekIdsRef.current.values().next().value;
     if (id === undefined) return null;
     availableSeekIdsRef.current.delete(id);
-    const entry = seeksRef.current.find(s => s.id === id) ?? { id, eventId: null };
+    const entry = seeksRef.current.find(s => s.id === id) ?? { id, eventId: null, refreshIntervalId: null };
+    if (entry.refreshIntervalId !== null) clearInterval(entry.refreshIntervalId);
     setSeeks(prev => prev.filter(s => s.id !== id));
     if (availableSeekIdsRef.current.size === 0) stopSeekSubscriptions();
     return entry;
   }, [stopSeekSubscriptions]);
 
-  // Start seek + invite subscriptions (only called when first seek is added).
+  // Start invite subscription (only called when first seek is added).
   const startSeekSubscriptions = useCallback(() => {
     // When someone invites us (they are P1, we are P2) — auto-join their game.
     inviteSubRef.current = subscribeToInvites(myPubkey, async (joinCode, _inviter, seekDTag) => {
       // Extract the local seek id from the d-tag (strip 'quoridor-seek-' prefix if present).
+      // Reject invites that don't reference a specific seek — prevents old invite events
+      // (which have empty seekDTag) from claiming a brand-new seek slot.
+      if (!seekDTag) return;
       const seekId = seekDTag.startsWith('quoridor-seek-')
         ? seekDTag.slice('quoridor-seek-'.length)
         : seekDTag;
-      const slot = seekId ? claimSeekSlot(seekId) : claimSeekSlot();
+      if (!seekId) return;
+      const slot = claimSeekSlot(seekId);
       if (!slot) return;
+      clearSeekRefresh(slot);
       if (slot.eventId) cancelSeek(slot.eventId);
       await doJoin(joinCode);
     });
-
-    // When we see another seeker: lower pubkey becomes P1 and creates the game.
-    seekSubRef.current = subscribeToSeeks(myPubkey, async (opponentPubkey, opponentSeekDTag) => {
-      if (myPubkey > opponentPubkey) return; // they will invite us — wait
-      const slot = claimSeekSlot();
-      if (!slot) return;
-      if (slot.eventId) cancelSeek(slot.eventId);
-      await doCreate(opponentPubkey, 1, opponentSeekDTag); // creator moves first for random games
-    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myPubkey, claimSeekSlot]);
+  }, [myPubkey, claimSeekSlot, clearSeekRefresh]);
 
   const handleAddSeek = async () => {
-    if (seeksRef.current.length >= 4) return;
+    if (seeksRef.current.length >= 1) return;
     setError('');
     await requestNotifyPermission();
 
     const id = randomUUID();
-    const entry: SeekEntry = { id, eventId: null };
+    const entry: SeekEntry = { id, eventId: null, refreshIntervalId: null };
     availableSeekIdsRef.current.add(id);
     setSeeks(prev => [...prev, entry]);
 
@@ -343,6 +399,15 @@ export default function App() {
     try {
       const eventId = await publishSeek(id);
       setSeeks(prev => prev.map(s => s.id === id ? { ...s, eventId } : s));
+
+      // Refresh the seek every 2 minutes so it stays near the top of seekers' lists.
+      const refreshIntervalId = setInterval(async () => {
+        try {
+          const newEventId = await publishSeek(id);
+          setSeeks(prev => prev.map(s => s.id === id ? { ...s, eventId: newEventId } : s));
+        } catch { /* best-effort */ }
+      }, 2 * 60 * 1000);
+      setSeeks(prev => prev.map(s => s.id === id ? { ...s, refreshIntervalId } : s));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to publish seek');
       availableSeekIdsRef.current.delete(id);
@@ -354,6 +419,7 @@ export default function App() {
   const handleCancelSeek = useCallback((id: string) => {
     availableSeekIdsRef.current.delete(id);
     const seek = seeksRef.current.find(s => s.id === id);
+    if (seek?.refreshIntervalId !== undefined && seek.refreshIntervalId !== null) clearInterval(seek.refreshIntervalId);
     if (seek?.eventId) cancelSeek(seek.eventId);
     setSeeks(prev => prev.filter(s => s.id !== id));
     if (availableSeekIdsRef.current.size === 0) stopSeekSubscriptions();
@@ -385,10 +451,26 @@ export default function App() {
       await publishInvite(opponentPubkey, gameId, code, opponentSeekDTag ?? '');
 
       const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: creatorPlayer, lastEventId: eventId, joinCode: code, isCreator: true };
-      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false } }));
+      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false, originSeekDTag: opponentSeekDTag } }));
       savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: creatorPlayer, joinCode: code, lastMoveAt: Date.now() });
       setActiveGameId(gameId);
       setPhase('playing');
+
+      // Race-condition check: 30 s after picking, verify the seek still existed.
+      if (opponentSeekDTag) {
+        setTimeout(async () => {
+          const entry = gamesRef.current[gameId];
+          if (!entry || entry.opponentSeen) return;
+          const stillSeeking = await fetchSeekEvent(opponentPubkey, opponentSeekDTag);
+          if (!stillSeeking) {
+            setGames(prev => {
+              const e = prev[gameId];
+              if (!e || e.opponentSeen) return prev;
+              return { ...prev, [gameId]: { ...e, seekGone: true } };
+            });
+          }
+        }, 30_000);
+      }
     } catch (e) {
       subsRef.current.get(gameId)?.stop();
       subsRef.current.delete(gameId);
@@ -417,6 +499,13 @@ export default function App() {
     savedSessions.upsert({ gameId, myPubkey, opponentPubkey: creatorPubkey, myPlayer, joinCode: joinCodeStr, lastMoveAt: Date.now() });
     setActiveGameId(gameId);
     setPhase('playing');
+  };
+
+  const handlePickSeeker = async (seeker: SeekListEntry) => {
+    setError('');
+    for (const seek of seeksRef.current) handleCancelSeek(seek.id);
+    await requestNotifyPermission();
+    await doCreate(seeker.pubkey, 1, seeker.dTag); // picker is P1, moves first
   };
 
   // ── Connect handlers ────────────────────────────────────────────────────────
@@ -642,7 +731,8 @@ export default function App() {
           joinCode: ss.joinCode,
           isCreator,
         };
-        newGames[ss.gameId] = { session, gameState, opponentSeen: false, finishReason: ss.finishReason };
+        const fr = ss.finishReason === 'finished' ? undefined : ss.finishReason;
+        newGames[ss.gameId] = { session, gameState, opponentSeen: false, finishReason: fr };
       }
 
       setGames(newGames);
@@ -997,20 +1087,51 @@ export default function App() {
             {lobbySection === 'new' && (
               <>
                 <div className="seek-section">
-                  {seeks.map(seek => (
-                    <div key={seek.id} className="seeking-status">
-                      <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-                      <span>Searching for opponent…</span>
-                      <p className="seek-hint">Keep this tab open — you'll be matched automatically.</p>
-                      <button className="btn btn-small btn-ghost" onClick={() => handleCancelSeek(seek.id)}>Cancel</button>
-                    </div>
-                  ))}
-                  {seeks.length < 4 && (
+                  {seeks.length === 0 ? (
                     <button className="btn btn-secondary" onClick={handleAddSeek}>
-                      {seeks.length === 0 ? 'Find random opponent' : 'Search for another opponent'}
-                      <span className="btn-sub">match with another seeker on Nostr</span>
+                      Add me to the list
+                      <span className="btn-sub">let others match you while you wait</span>
                     </button>
+                  ) : (
+                    <div className="seeking-status">
+                      <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+                      <span>You are in the list</span>
+                      <button className="btn btn-small btn-ghost" onClick={() => handleCancelSeek(seeks[0].id)}>Cancel</button>
+                    </div>
                   )}
+
+                  <div className="seek-list-section">
+                    <h3 className="seek-list-header">Players looking for a game</h3>
+                    {(() => {
+                      const entries = Object.values(seekList).filter(e => e.pubkey !== myPubkey).sort((a, b) => b.createdAt - a.createdAt);
+                      const PAGE_SIZE = 5;
+                      const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+                      const page = Math.min(seekPage, totalPages - 1);
+                      const pageEntries = entries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+                      return entries.length === 0 ? (
+                        <p className="seek-list-empty">No one is looking for a game right now.</p>
+                      ) : (
+                        <>
+                          <div className="seek-list">
+                            {pageEntries.map(entry => (
+                              <SeekRow
+                                key={entry.pubkey}
+                                entry={entry}
+                                onMatch={() => handlePickSeeker(entry)}
+                              />
+                            ))}
+                          </div>
+                          {totalPages > 1 && (
+                            <div className="seek-list-pagination">
+                              <button className="btn btn-small btn-ghost" disabled={page === 0} onClick={() => setSeekPage(p => Math.max(0, p - 1))}>← Prev</button>
+                              <span>{page + 1} / {totalPages}</span>
+                              <button className="btn btn-small btn-ghost" disabled={page >= totalPages - 1} onClick={() => setSeekPage(p => Math.min(totalPages - 1, p + 1))}>Next →</button>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
 
                 <div className="tabs">
@@ -1098,9 +1219,16 @@ export default function App() {
                   )}
                 </>
               ) : (
-                <span className="waiting">
-                  {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent\'s move…'}
-                </span>
+                <>
+                  <span className="waiting">
+                    {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent\'s move…'}
+                  </span>
+                  {!activeEntry.opponentSeen && activeEntry.seekGone && (
+                    <p className="seek-gone-warning">
+                      ⚠ Your opponent may have already been matched by someone else. You can resign and pick another.
+                    </p>
+                  )}
+                </>
               )}
             </div>
             <div className="game-players">

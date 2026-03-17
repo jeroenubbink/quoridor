@@ -442,17 +442,20 @@ export async function cancelSeek(seekEventId: string): Promise<void> {
   await del.publish().catch(() => {});
 }
 
+export interface SeekListEntry {
+  pubkey: string;
+  dTag: string;       // e.g. "quoridor-seek-uuid-1"
+  createdAt: number;  // unix seconds
+}
+
 /**
- * Subscribe to seeks from other players. Only yields events fresher than
- * SEEK_EXPIRY_MS. Excludes your own pubkey.
- *
- * Stored (pre-EOSE) events are collected first, then the oldest one is picked
- * so players who have been waiting longest get matched first. Real-time events
- * arriving after EOSE are matched immediately.
+ * Subscribe to all active seeks for display as a list.
+ * Fires onSeek for each arriving/replacing event.
+ * No batching/sorting — caller sorts client-side.
+ * Includes own seeks so the user sees themselves in the list.
  */
-export function subscribeToSeeks(
-  excludePubkey: string,
-  onSeek: (pubkey: string, seekDTag: string) => void,
+export function subscribeToSeekList(
+  onSeek: (entry: SeekListEntry) => void,
 ): NDKSubscription {
   const ndk = getNdk();
   const since = Math.floor((Date.now() - SEEK_EXPIRY_MS) / 1000);
@@ -461,43 +464,49 @@ export function subscribeToSeeks(
     { closeOnEose: false, groupable: false },
   );
 
-  // Collect stored seeks briefly, then pick the oldest (longest waiting) first.
-  // We flush on EOSE or after a 3-second timeout — whichever comes first —
-  // so matching works even if the relay doesn't send EOSE.
-  const pending: { pubkey: string; seekDTag: string; createdAt: number }[] = [];
-  let flushed = false;
-
-  const flush = () => {
-    if (flushed) return;
-    flushed = true;
-    if (pending.length === 0) return;
-    pending.sort((a, b) => a.createdAt - b.createdAt);
-    for (const { pubkey, seekDTag } of pending) onSeek(pubkey, seekDTag);
-  };
-
-  const flushTimer = setTimeout(flush, 3000);
-
   sub.on('event', (ev: NDKEvent) => {
-    if (ev.pubkey === excludePubkey) return;
     const age = Date.now() - (ev.created_at ?? 0) * 1000;
     if (age > SEEK_EXPIRY_MS) return;
-
     const dTag = ev.tags.find(t => t[0] === 'd')?.[1];
-    if (!dTag) return; // malformed — skip
-
-    if (!flushed) {
-      pending.push({ pubkey: ev.pubkey, seekDTag: dTag, createdAt: ev.created_at ?? 0 });
-    } else {
-      onSeek(ev.pubkey, dTag);
-    }
-  });
-
-  sub.on('eose', () => {
-    clearTimeout(flushTimer);
-    flush();
+    if (!dTag) return;
+    onSeek({ pubkey: ev.pubkey, dTag, createdAt: ev.created_at ?? 0 });
   });
 
   return sub;
+}
+
+/**
+ * Cancel all active seek events published by myPubkey (from any session).
+ * Called on lobby entry to clean up orphaned seeks left by closed tabs.
+ */
+export async function cancelOwnStaleSeeks(myPubkey: string): Promise<void> {
+  const ndk = getNdk();
+  const since = Math.floor((Date.now() - SEEK_EXPIRY_MS) / 1000);
+  let events: Set<NDKEvent>;
+  try {
+    events = await ndk.fetchEvents({
+      kinds: [GAME_KIND as number],
+      authors: [myPubkey],
+      '#t': ['quoridor-seek'],
+      since,
+    });
+  } catch {
+    return;
+  }
+  for (const ev of events) {
+    cancelSeek(ev.id).catch(() => {});
+  }
+}
+
+/** Returns true if the seek event still exists on relays, false if deleted/missing. */
+export async function fetchSeekEvent(seekerPubkey: string, dTag: string): Promise<boolean> {
+  const ndk = getNdk();
+  const ev = await ndk.fetchEvent({
+    kinds: [GAME_KIND as number],
+    authors: [seekerPubkey],
+    '#d': [dTag],
+  });
+  return ev !== null;
 }
 
 /**
