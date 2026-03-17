@@ -20,6 +20,7 @@ Two players, one pawn each, opposite sides of a 9×9 grid. First to reach the ot
 - **Nostr identity or anonymous play** — connect with a NIP-07 browser extension (Alby, nos2x, …) or jump in with an auto-generated anonymous name
 - **Invite a specific player** — search by name or paste an npub; NIP-50 full-text search via relay.nostr.band
 - **Async random matchmaking** — seek events persist for 24 hours; you get matched whenever another seeker shows up, even if you're not online at the same time
+- **Multiple simultaneous seeks** — post up to 4 random-seek requests at once; each is matched and cancelled independently
 - **Multiple simultaneous games** — all games live side by side in the lobby, organised into Active / New / History tabs
 - **Session persistence** — sessions survive page reloads; reconnect picks up the latest state from relays
 - **Browser notifications** — get pinged when it's your turn
@@ -65,10 +66,12 @@ Output goes to `dist/` and can be served as a static site from any host.
 Each move is published as a **kind-30078 parameterized replaceable event**. The content is the full game state serialised as JSON and encrypted with NIP-44 to the opponent's public key. Because the event kind is replaceable, each player's relay only keeps their latest state — old moves are superseded automatically.
 
 Matchmaking uses two ephemeral event tags:
-- `quoridor-seek` — broadcast that you're looking for a game
-- `quoridor-invite` — direct invite to a specific seeker
+- `quoridor-seek` — broadcast that you're looking for a game (carries a `v` tag for protocol version)
+- `quoridor-invite` — direct invite to a specific seeker (carries a `seek` tag referencing the matched seek d-tag so the seeker can cancel it)
 
 The player with the lower pubkey hex creates the game in a random seek match. In a manual invite the invitee always moves first.
+
+Game state events carry a `version` field; a state update is rejected if it was produced by a different protocol version.
 
 ---
 

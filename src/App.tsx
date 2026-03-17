@@ -253,29 +253,42 @@ export default function App() {
     inviteSubRef.current = null;
   }, []);
 
-  // Claim one available seek slot; returns the seek id or null if none left.
-  const claimSeekSlot = useCallback((): string | null => {
-    const id = availableSeekIdsRef.current.values().next().value;
+  // Claim one available seek slot; returns the full SeekEntry or null if none left.
+  // With targetId: claims that specific seek (invite path).
+  // Without targetId: claims any available seek (creator path).
+  const claimSeekSlot = useCallback((targetId?: string): SeekEntry | null => {
+    const id = targetId !== undefined
+      ? (availableSeekIdsRef.current.has(targetId) ? targetId : undefined)
+      : availableSeekIdsRef.current.values().next().value;
     if (id === undefined) return null;
     availableSeekIdsRef.current.delete(id);
+    const entry = seeksRef.current.find(s => s.id === id) ?? { id, eventId: null };
     setSeeks(prev => prev.filter(s => s.id !== id));
     if (availableSeekIdsRef.current.size === 0) stopSeekSubscriptions();
-    return id;
+    return entry;
   }, [stopSeekSubscriptions]);
 
   // Start seek + invite subscriptions (only called when first seek is added).
   const startSeekSubscriptions = useCallback(() => {
     // When someone invites us (they are P1, we are P2) — auto-join their game.
-    inviteSubRef.current = subscribeToInvites(myPubkey, async (joinCode) => {
-      if (claimSeekSlot() === null) return;
+    inviteSubRef.current = subscribeToInvites(myPubkey, async (joinCode, _inviter, seekDTag) => {
+      // Extract the local seek id from the d-tag (strip 'quoridor-seek-' prefix if present).
+      const seekId = seekDTag.startsWith('quoridor-seek-')
+        ? seekDTag.slice('quoridor-seek-'.length)
+        : seekDTag;
+      const slot = seekId ? claimSeekSlot(seekId) : claimSeekSlot();
+      if (!slot) return;
+      if (slot.eventId) cancelSeek(slot.eventId);
       await doJoin(joinCode);
     });
 
     // When we see another seeker: lower pubkey becomes P1 and creates the game.
-    seekSubRef.current = subscribeToSeeks(myPubkey, async (opponentPubkey) => {
+    seekSubRef.current = subscribeToSeeks(myPubkey, async (opponentPubkey, opponentSeekDTag) => {
       if (myPubkey > opponentPubkey) return; // they will invite us — wait
-      if (claimSeekSlot() === null) return;
-      await doCreate(opponentPubkey, 1); // creator moves first for random games
+      const slot = claimSeekSlot();
+      if (!slot) return;
+      if (slot.eventId) cancelSeek(slot.eventId);
+      await doCreate(opponentPubkey, 1, opponentSeekDTag); // creator moves first for random games
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myPubkey, claimSeekSlot]);
@@ -316,7 +329,7 @@ export default function App() {
 
   // creatorPlayer = 1 for random-seek games (creator moves first),
   //               = 2 for manual invites (invitee moves first).
-  const doCreate = async (opponentPubkey: string, creatorPlayer: 1 | 2 = 2) => {
+  const doCreate = async (opponentPubkey: string, creatorPlayer: 1 | 2 = 2, opponentSeekDTag?: string) => {
     const gameId = randomUUID();
     const initial = createInitialState();
     // Encode creator's player number so the joiner can derive theirs.
@@ -335,7 +348,7 @@ export default function App() {
         prevEventId: null,
         state: initial,
       });
-      await publishInvite(opponentPubkey, gameId, code);
+      await publishInvite(opponentPubkey, gameId, code, opponentSeekDTag ?? '');
 
       const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: creatorPlayer, lastEventId: eventId, joinCode: code, isCreator: true };
       setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false } }));
@@ -850,6 +863,7 @@ export default function App() {
                     <div key={seek.id} className="seeking-status">
                       <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
                       <span>Searching for opponent…</span>
+                      <p className="seek-hint">Keep this tab open — you'll be matched automatically.</p>
                       <button className="btn btn-small btn-ghost" onClick={() => handleCancelSeek(seek.id)}>Cancel</button>
                     </div>
                   ))}

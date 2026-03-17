@@ -7,7 +7,7 @@ import NDK, {
   type NDKFilter,
 } from '@nostr-dev-kit/ndk';
 import { nip19 } from 'nostr-tools';
-import { validateIncomingState, type GameState, type Player } from './game';
+import { validateIncomingState, GAME_VERSION, type GameState, type Player } from './game';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -410,6 +410,7 @@ export async function publishSeek(seekId: string): Promise<string> {
     ['d', `quoridor-seek-${seekId}`],
     ['t', 'quoridor'],
     ['t', 'quoridor-seek'],
+    ['v', String(GAME_VERSION)],
   ];
   event.content = '';
   const relays = await event.publish();
@@ -437,19 +438,19 @@ export async function cancelSeek(seekEventId: string): Promise<void> {
  */
 export function subscribeToSeeks(
   excludePubkey: string,
-  onSeek: (pubkey: string) => void,
+  onSeek: (pubkey: string, seekDTag: string) => void,
 ): NDKSubscription {
   const ndk = getNdk();
   const since = Math.floor((Date.now() - SEEK_EXPIRY_MS) / 1000);
   const sub = ndk.subscribe(
-    { kinds: [GAME_KIND as number], '#t': ['quoridor-seek'], since },
+    { kinds: [GAME_KIND as number], '#t': ['quoridor-seek'], '#v': [String(GAME_VERSION)], since },
     { closeOnEose: false, groupable: false },
   );
 
   // Collect stored seeks briefly, then pick the oldest (longest waiting) first.
   // We flush on EOSE or after a 3-second timeout — whichever comes first —
   // so matching works even if the relay doesn't send EOSE.
-  const pending: { pubkey: string; createdAt: number }[] = [];
+  const pending: { pubkey: string; seekDTag: string; createdAt: number }[] = [];
   let flushed = false;
 
   const flush = () => {
@@ -457,7 +458,7 @@ export function subscribeToSeeks(
     flushed = true;
     if (pending.length === 0) return;
     pending.sort((a, b) => a.createdAt - b.createdAt);
-    for (const { pubkey } of pending) onSeek(pubkey);
+    for (const { pubkey, seekDTag } of pending) onSeek(pubkey, seekDTag);
   };
 
   const flushTimer = setTimeout(flush, 3000);
@@ -467,10 +468,13 @@ export function subscribeToSeeks(
     const age = Date.now() - (ev.created_at ?? 0) * 1000;
     if (age > SEEK_EXPIRY_MS) return;
 
+    const dTag = ev.tags.find(t => t[0] === 'd')?.[1];
+    if (!dTag) return; // malformed — skip
+
     if (!flushed) {
-      pending.push({ pubkey: ev.pubkey, createdAt: ev.created_at ?? 0 });
+      pending.push({ pubkey: ev.pubkey, seekDTag: dTag, createdAt: ev.created_at ?? 0 });
     } else {
-      onSeek(ev.pubkey);
+      onSeek(ev.pubkey, dTag);
     }
   });
 
@@ -490,6 +494,7 @@ export async function publishInvite(
   seekerPubkey: string,
   gameId: string,
   joinCode: string,
+  seekerSeekDTag: string,
 ): Promise<void> {
   const ndk = getNdk();
   const event = new NDKEvent(ndk);
@@ -499,6 +504,7 @@ export async function publishInvite(
     ['t', 'quoridor'],
     ['t', 'quoridor-invite'],
     ['p', seekerPubkey],
+    ['seek', seekerSeekDTag],
   ];
   event.content = joinCode;
   await event.publish();
@@ -507,10 +513,10 @@ export async function publishInvite(
 /** Subscribe to game invites addressed to myPubkey. */
 export function subscribeToInvites(
   myPubkey: string,
-  onInvite: (joinCode: string, inviterPubkey: string) => void,
+  onInvite: (joinCode: string, inviterPubkey: string, seekDTag: string) => void,
 ): NDKSubscription {
   const ndk = getNdk();
-  const since = Math.floor((Date.now() - 60_000) / 1000); // last 60s only
+  const since = Math.floor((Date.now() - SEEK_EXPIRY_MS) / 1000); // 24h window for async matchmaking
   const sub = ndk.subscribe(
     {
       kinds: [GAME_KIND as number],
@@ -521,7 +527,10 @@ export function subscribeToInvites(
     { closeOnEose: false, groupable: false },
   );
   sub.on('event', (ev: NDKEvent) => {
-    if (ev.content) onInvite(ev.content, ev.pubkey);
+    if (ev.content) {
+      const seekDTag = ev.tags.find(t => t[0] === 'seek')?.[1] ?? '';
+      onInvite(ev.content, ev.pubkey, seekDTag);
+    }
   });
   return sub;
 }

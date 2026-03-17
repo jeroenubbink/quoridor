@@ -5,6 +5,7 @@ export const GRID = BOARD_SIZE * 2 - 1;          // 17
 export const CENTER_COL = BOARD_SIZE - 1;          // 8  (cell col 4)
 export const WALLS_PER_PLAYER = 10;
 export const WALL = 1;
+export const GAME_VERSION = 1;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,6 +13,7 @@ export type Player = 1 | 2;
 export type Board = number[][];
 
 export interface GameState {
+  version: number;
   board: Board;
   currentPlayer: Player;
   walls: [number, number];   // walls remaining [p1, p2]
@@ -28,6 +30,7 @@ function cellNotation(r: number, c: number): string {
 
 export function createInitialState(): GameState {
   return {
+    version: GAME_VERSION,
     board: Array.from({ length: GRID }, (_, r) =>
       Array.from({ length: GRID }, (_, c) => {
         if (r === 0 && c === CENTER_COL) return 1;
@@ -156,6 +159,7 @@ export function applyPawnMove(state: GameState, row: number, col: number): GameS
   newBoard[row][col] = state.currentPlayer;
   const winner = checkWinner(newBoard);
   return {
+    version: state.version,
     board: newBoard,
     currentPlayer: winner ? state.currentPlayer : (3 - state.currentPlayer) as Player,
     walls: state.walls,
@@ -178,6 +182,7 @@ export function applyWallPlace(state: GameState, cells: [number, number][]): Gam
     : `V-wall at ${cellNotation(wr, wc + 1)}`; // wc is odd; col to right
 
   return {
+    version: state.version,
     board: newBoard,
     currentPlayer: (3 - state.currentPlayer) as Player,
     walls: newWalls,
@@ -197,6 +202,9 @@ export function validateIncomingState(
   incoming: GameState,
   expectedMover: Player,
 ): boolean {
+  // Version must match — allows undefined == undefined for old stored states
+  if (incoming.version !== current.version) return false;
+
   // winner field must be null, 1, or 2
   if (incoming.winner !== null && incoming.winner !== 1 && incoming.winner !== 2) return false;
 
