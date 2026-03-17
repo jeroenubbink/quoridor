@@ -33,6 +33,21 @@ export function getNdk(): NDK {
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 
+async function initNdk(signer: NDKNip07Signer | NDKPrivateKeySigner, autoConnectUserRelays: boolean): Promise<NDK> {
+  if (_ndk) {
+    try { _ndk.pool?.destroy(); } catch { /* best-effort cleanup */ }
+  }
+  const ndk = new NDK({
+    explicitRelayUrls: BOOTSTRAP_RELAYS,
+    signer,
+    enableOutboxModel: true,
+    autoConnectUserRelays,
+  });
+  await ndk.connect(3000);
+  _ndk = ndk;
+  return ndk;
+}
+
 export async function connectWithExtension(): Promise<string> {
   if (typeof window === 'undefined' || !('nostr' in window)) {
     throw new Error(
@@ -56,29 +71,14 @@ export async function connectWithExtension(): Promise<string> {
     // encryptionEnabled may not exist on older extensions; try anyway.
   }
 
-  _ndk = new NDK({
-    explicitRelayUrls: BOOTSTRAP_RELAYS,
-    signer,
-    enableOutboxModel: true,
-    autoConnectUserRelays: true,
-  });
-
-  await _ndk.connect(3000);
+  await initNdk(signer, true);
   const user = await signer.user();
   return user.pubkey;
 }
 
 export async function connectWithTempKey(): Promise<{ pubkey: string; nsecHex: string }> {
   const signer = NDKPrivateKeySigner.generate();
-
-  _ndk = new NDK({
-    explicitRelayUrls: BOOTSTRAP_RELAYS,
-    signer,
-    enableOutboxModel: true,
-    autoConnectUserRelays: false, // no key published so nothing to look up
-  });
-
-  await _ndk.connect(3000);
+  await initNdk(signer, false); // no key published so nothing to look up
   const user = await signer.user();
   return { pubkey: user.pubkey, nsecHex: signer.privateKey! };
 }
@@ -95,13 +95,7 @@ export async function connectWithNsec(nsecOrHex: string): Promise<{ pubkey: stri
     privkeyHex = nsecOrHex.toLowerCase();
   }
   const signer = new NDKPrivateKeySigner(privkeyHex);
-  _ndk = new NDK({
-    explicitRelayUrls: BOOTSTRAP_RELAYS,
-    signer,
-    enableOutboxModel: true,
-    autoConnectUserRelays: true,
-  });
-  await _ndk.connect(3000);
+  await initNdk(signer, true);
   const user = await signer.user();
   return { pubkey: user.pubkey, nsecHex: privkeyHex };
 }
@@ -114,15 +108,7 @@ export function nsecHexToBech32(nsecHex: string): string {
 /** Reconnect using a previously saved ephemeral private key (hex). */
 export async function connectWithSavedKey(nsecHex: string): Promise<string> {
   const signer = new NDKPrivateKeySigner(nsecHex);
-
-  _ndk = new NDK({
-    explicitRelayUrls: BOOTSTRAP_RELAYS,
-    signer,
-    enableOutboxModel: true,
-    autoConnectUserRelays: false,
-  });
-
-  await _ndk.connect(3000);
+  await initNdk(signer, false);
   const user = await signer.user();
   return user.pubkey;
 }

@@ -124,6 +124,12 @@ export default function App() {
   const [nsecInput, setNsecInput] = useState('');
   const [showNsecReveal, setShowNsecReveal] = useState(false);
 
+  const nsecBech32 = useMemo(() => {
+    if (!showNsecReveal) return '';
+    const sk = savedKey.load();
+    return sk?.nsecHex ? nsecHexToBech32(sk.nsecHex) : '';
+  }, [showNsecReveal]);
+
   const copyWithFeedback = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -888,31 +894,27 @@ export default function App() {
                   >
                     {showNsecReveal ? 'Hide' : 'Continue on another device'}
                   </button>
-                  {showNsecReveal && (() => {
-                    const sk = savedKey.load();
-                    const bech32 = sk?.nsecHex ? nsecHexToBech32(sk.nsecHex) : '';
-                    return (
-                      <div className="nsec-reveal-panel">
-                        <p className="nsec-info">
-                          Copy this key and paste it on the other device or browser when logging in
-                          — choose "Use saved key" on the login screen.
-                        </p>
-                        <p className="nsec-warning">
-                          ⚠ This is a Nostr private key (nsec). Anyone who sees it can use your
-                          anonymous identity permanently. Only copy it to a device you trust.
-                        </p>
-                        <div className="nsec-reveal-row">
-                          <code className="nsec-reveal-value">{bech32}</code>
-                          <button
-                            className="btn btn-small btn-ghost"
-                            onClick={() => { copyWithFeedback(bech32, 'nsec-export'); setShowNsecReveal(false); }}
-                          >
-                            {copiedId === 'nsec-export' ? 'Copied!' : 'Copy'}
-                          </button>
-                        </div>
+                  {showNsecReveal && (
+                    <div className="nsec-reveal-panel">
+                      <p className="nsec-info">
+                        Copy this key and paste it on the other device or browser when logging in
+                        — choose "Use saved key" on the login screen.
+                      </p>
+                      <p className="nsec-warning">
+                        ⚠ This is a Nostr private key (nsec). Anyone who sees it can use your
+                        anonymous identity permanently. Only copy it to a device you trust.
+                      </p>
+                      <div className="nsec-reveal-row">
+                        <code className="nsec-reveal-value">{nsecBech32}</code>
+                        <button
+                          className="btn btn-small btn-ghost"
+                          onClick={() => { copyWithFeedback(nsecBech32, 'nsec-export'); setShowNsecReveal(false); }}
+                        >
+                          {copiedId === 'nsec-export' ? 'Copied!' : 'Copy'}
+                        </button>
                       </div>
-                    );
-                  })()}
+                    </div>
+                  )}
                 </>
               )}
             </div>
