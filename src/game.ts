@@ -22,6 +22,10 @@ export interface GameState {
   lastMove?: { type: 'pawn' | 'wall'; notation: string };
 }
 
+export type OpponentMove =
+  | { type: 'pawn'; from: [number, number]; to: [number, number] }
+  | { type: 'wall'; cells: [number, number][] };
+
 function cellNotation(r: number, c: number): string {
   return String.fromCharCode(65 + c / 2) + (r / 2 + 1);
 }
@@ -190,6 +194,29 @@ export function applyWallPlace(state: GameState, cells: [number, number][]): Gam
     moveNumber: state.moveNumber + 1,
     lastMove: { type: 'wall', notation },
   };
+}
+
+export function diffBoards(
+  prev: Board,
+  next: Board,
+  movedBy: Player,
+): OpponentMove | null {
+  const diffs: { r: number; c: number; from: number; to: number }[] = [];
+  for (let r = 0; r < GRID; r++)
+    for (let c = 0; c < GRID; c++)
+      if (prev[r][c] !== next[r][c])
+        diffs.push({ r, c, from: prev[r][c], to: next[r][c] });
+
+  if (diffs.length === 2) {
+    const src = diffs.find(d => d.from === movedBy && d.to === 0);
+    const dst = diffs.find(d => d.from === 0    && d.to === movedBy);
+    if (src && dst)
+      return { type: 'pawn', from: [src.r, src.c], to: [dst.r, dst.c] };
+  }
+  if (diffs.length === 3 && diffs.every(d => d.from === 0 && d.to === WALL))
+    return { type: 'wall', cells: diffs.map(d => [d.r, d.c] as [number, number]) };
+
+  return null;
 }
 
 /**

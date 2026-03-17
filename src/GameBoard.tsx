@@ -6,6 +6,7 @@ import {
   GRID,
   type GameState,
   type Player,
+  type OpponentMove,
 } from './game';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -15,11 +16,13 @@ interface Props {
   myPlayer: Player;
   onPawnMove: (row: number, col: number) => void;
   onWallPlace: (cells: [number, number][]) => void;
+  opponentLastMove?: OpponentMove | null;
+  highlightKey?: number;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
+export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace, opponentLastMove, highlightKey }: Props) {
   const { board, currentPlayer, walls, winner } = state;
   const isMyTurn = !winner && currentPlayer === myPlayer;
   const flipped = myPlayer === 1;
@@ -36,6 +39,17 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
     if (!isMyTurn) return new Set();
     return new Set(getValidMoves(board, currentPlayer).map(([r, c]) => `${r},${c}`));
   }, [board, currentPlayer, isMyTurn]);
+
+  // Highlight set for opponent's last move
+  const highlightSet = useMemo<Set<string>>(() => {
+    if (!opponentLastMove) return new Set();
+    if (opponentLastMove.type === 'pawn')
+      return new Set([
+        `${opponentLastMove.from[0]},${opponentLastMove.from[1]}`,
+        `${opponentLastMove.to[0]},${opponentLastMove.to[1]}`,
+      ]);
+    return new Set(opponentLastMove.cells.map(([r, c]) => `${r},${c}`));
+  }, [opponentLastMove]);
 
   // Wall hover preview
   const wallPreview = useMemo(() => {
@@ -133,6 +147,10 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
         cls.push(wallPreview.valid ? 'wall-preview' : 'wall-preview-bad');
     }
 
+    if (highlightSet.has(key)) {
+      cls.push(opponentLastMove!.type === 'pawn' ? 'pawn-arrived' : 'wall-blinked');
+    }
+
     return cls.join(' ');
   };
 
@@ -152,44 +170,32 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
       {/* onMouseLeave on board clears preview; squares clear it on enter.
           Corners have no handler so crossing them doesn't flicker the preview. */}
       <div className="board-wrap">
-        <div className="board-col-labels" aria-hidden="true">
-          {(flipped ? ['I','H','G','F','E','D','C','B','A'] : ['A','B','C','D','E','F','G','H','I']).map(l => (
-            <span key={l} className="coord-label">{l}</span>
-          ))}
-        </div>
-        <div className="board-inner">
-          <div className="board-row-labels" aria-hidden="true">
-            {(flipped ? [9,8,7,6,5,4,3,2,1] : [1,2,3,4,5,6,7,8,9]).map(n => (
-              <span key={n} className="coord-label">{n}</span>
-            ))}
-          </div>
-          <div className="board" onMouseLeave={clearPreview}>
-            {Array.from({ length: GRID }, (_, ri) => {
-              const r = flipped ? GRID - 1 - ri : ri;
-              return (
-                <div key={r} className="row">
-                  {Array.from({ length: GRID }, (_, ci) => {
-                    const c = flipped ? GRID - 1 - ci : ci;
-                    const isSquare = r % 2 === 0 && c % 2 === 0;
-                    const isWallSlot = r % 2 !== c % 2;
-                    return (
-                      <div
-                        key={c}
-                        className={getCellClass(r, c)}
-                        onPointerDown={(e) => handlePointerDown(e, r, c)}
-                        onClick={() => handleClick(r, c)}
-                        onMouseEnter={
-                          isWallSlot ? () => handleWallEnter(r, c) :
-                          isSquare   ? clearPreview :
-                          undefined
-                        }
-                      />
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
+        <div className="board" onMouseLeave={clearPreview}>
+          {Array.from({ length: GRID }, (_, ri) => {
+            const r = flipped ? GRID - 1 - ri : ri;
+            return (
+              <div key={r} className="row">
+                {Array.from({ length: GRID }, (_, ci) => {
+                  const c = flipped ? GRID - 1 - ci : ci;
+                  const isSquare = r % 2 === 0 && c % 2 === 0;
+                  const isWallSlot = r % 2 !== c % 2;
+                  return (
+                    <div
+                      key={highlightSet.has(`${r},${c}`) ? `${c}-${highlightKey ?? 0}` : c}
+                      className={getCellClass(r, c)}
+                      onPointerDown={(e) => handlePointerDown(e, r, c)}
+                      onClick={() => handleClick(r, c)}
+                      onMouseEnter={
+                        isWallSlot ? () => handleWallEnter(r, c) :
+                        isSquare   ? clearPreview :
+                        undefined
+                      }
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </div>
 

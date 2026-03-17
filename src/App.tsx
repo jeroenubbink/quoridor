@@ -6,8 +6,10 @@ import {
   createInitialState,
   applyPawnMove,
   applyWallPlace,
+  diffBoards,
   type GameState,
   type Player,
+  type OpponentMove,
 } from './game';
 import {
   connectWithExtension,
@@ -70,6 +72,7 @@ interface GameEntry {
   gameState: GameState;
   opponentSeen: boolean;          // true once we receive the first event from the opponent
   finishReason?: 'timeout' | 'resign' | 'no-contest';
+  opponentLastMove?: OpponentMove;
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -91,6 +94,7 @@ export default function App() {
 
   // All active games, keyed by gameId.
   const [games, setGames] = useState<Record<string, GameEntry>>({});
+  const [highlightKey, setHighlightKey] = useState(0);
   const gamesRef = useRef<Record<string, GameEntry>>({});
   gamesRef.current = games;
 
@@ -245,9 +249,15 @@ export default function App() {
           if (!entry || incoming.moveNumber <= entry.gameState.moveNumber) return prev;
           const all = savedSessions.load();
           if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
-          return { ...prev, [gameId]: { ...entry, gameState: incoming, opponentSeen: true } };
+          const movedBy = entry.gameState.currentPlayer;
+          const opponentLastMove =
+            diffBoards(entry.gameState.board, incoming.board, movedBy) ?? entry.opponentLastMove;
+          return { ...prev, [gameId]: { ...entry, gameState: incoming, opponentSeen: true, opponentLastMove } };
         });
-        if (incoming.currentPlayer === myPlayer) notifyTurn(gameId);
+        if (incoming.currentPlayer === myPlayer) {
+          notifyTurn(gameId);
+          setHighlightKey(k => k + 1);
+        }
       },
     );
 
@@ -1047,7 +1057,16 @@ export default function App() {
                   {activeEntry.finishReason === 'timeout' && ' (timeout)'}
                 </>
               ) : activeEntry.gameState.currentPlayer === activeEntry.session.myPlayer ? (
-                <span className={`pname p${activeEntry.session.myPlayer}-color`}>Your turn</span>
+                <span className={`pname p${activeEntry.session.myPlayer}-color`}>
+                  Your turn
+                  {activeEntry.opponentLastMove && (
+                    <button
+                      className="replay-btn"
+                      onClick={() => setHighlightKey(k => k + 1)}
+                      title="Replay opponent's last move"
+                    >Last opp move</button>
+                  )}
+                </span>
               ) : (
                 <span className="waiting">
                   {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent\'s move…'}
@@ -1086,6 +1105,8 @@ export default function App() {
             myPlayer={activeEntry.session.myPlayer}
             onPawnMove={handlePawnMove}
             onWallPlace={handleWallPlace}
+            opponentLastMove={activeEntry.opponentLastMove}
+            highlightKey={highlightKey}
           />
 
           <div className="game-footer">

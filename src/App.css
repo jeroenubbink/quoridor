@@ -898,61 +898,51 @@
   font-style: italic;
 }
 
+/* ── Last-move animations ──────────────────────────────────────────────────── */
+
+@keyframes wall-blink {
+  0%, 100% { background: #a07830; }
+  30%, 70%  { background: #ffe87c; }
+}
+
+@keyframes pawn-arrive {
+  0%   { transform: scale(1.45); filter: brightness(1.7); }
+  60%  { transform: scale(0.95); }
+  100% { transform: scale(1);    filter: brightness(1);   }
+}
+
+.cell.wall-blinked {
+  animation: wall-blink 1s ease-in-out;
+}
+
+.cell.pawn-arrived {
+  animation: pawn-arrive 0.45s ease-out;
+}
+
+.replay-btn {
+  background: none;
+  border: 1px solid #5a4830;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #a89060;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+.replay-btn:hover { opacity: 1; color: #d4a843; border-color: #d4a843; }
+
 
 /* ── Board coordinate labels ─────────────────────────────────────────────── */
 
 .board-wrap {
-  /* --sq accounts for: app padding (32px) + board border+padding (44px)
-     + row-label column (20px) + gap (4px) = ~100px total non-cell space.
+  /* --sq accounts for: app padding (32px) + board border+padding (44px) = 76px total non-cell space.
      Cell space = --sq * (9 squares + 8 gaps * 0.154) = --sq * 10.23      */
-  --sq: min(52px, calc((100vw - 100px) / 10.23));
+  --sq: min(52px, calc((100vw - 76px) / 10.23));
   --gap: calc(var(--sq) * 0.154); /* ~8px at 52px */
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.board-inner {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-.board-col-labels {
-  display: flex;
-  flex-direction: row;
-  gap: var(--gap);
-  /* row-label col (1.2rem) + inner gap (4px) + board border (8px) + board padding (14px) */
-  padding-left: calc(1.2rem + 26px);
-}
-
-.board-row-labels {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap);
-  width: 1.2rem;
-  /* board border (8px) + board padding (14px) */
-  padding-top: 22px;
-}
-
-.coord-label {
-  font-size: 0.65rem;
-  color: #a89060;
-  text-align: center;
-  line-height: 1;
-  width: var(--sq);
-  height: var(--sq);
-  display: flex;
-  align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-}
-
-.board-row-labels .coord-label {
-  width: 1.2rem;
-  height: var(--sq);
 }
 
 /* ── nsec login / export ───────────────────────────────────────────── */
