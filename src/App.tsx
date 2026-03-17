@@ -253,9 +253,15 @@ export default function App() {
       (incoming) => {
         setGames(prev => {
           const entry = prev[gameId];
-          if (!entry || incoming.moveNumber <= entry.gameState.moveNumber) return prev;
+          if (!entry) return prev;
+          const isForfeit = incoming.moveNumber === entry.gameState.moveNumber && incoming.winner !== null;
+          if (!isForfeit && incoming.moveNumber <= entry.gameState.moveNumber) return prev;
           const all = savedSessions.load();
-          if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
+          if (all[gameId]) savedSessions.upsert({
+            ...all[gameId],
+            lastMoveAt: Date.now(),
+            ...(incoming.winner !== null ? { finishReason: 'finished' as const } : {}),
+          });
           const movedBy = entry.gameState.currentPlayer;
           const opponentLastMove =
             diffBoards(entry.gameState.board, incoming.board, movedBy) ?? entry.opponentLastMove;
@@ -518,6 +524,10 @@ export default function App() {
     const { session, gameState } = entry;
     const opponentPlayer = (3 - session.myPlayer) as Player;
     const forfeit: GameState = { ...gameState, winner: opponentPlayer };
+
+    // Apply forfeit optimistically so the resign button disappears immediately.
+    setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: forfeit, finishReason: 'resign' } }));
+
     try {
       await publishMove({
         gameId,
@@ -531,7 +541,6 @@ export default function App() {
 
     subsRef.current.get(gameId)?.stop();
     subsRef.current.delete(gameId);
-    setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: forfeit, finishReason: 'resign' } }));
     const ss = savedSessions.load()[gameId];
     if (ss) savedSessions.upsert({ ...ss, finishReason: 'resign' });
     if (activeGameId === gameId) { setActiveGameId(null); setPhase('lobby'); }
@@ -564,7 +573,11 @@ export default function App() {
         return { ...prev, [gameId]: { ...e, session: { ...e.session, lastEventId: eventId } } };
       });
       const all = savedSessions.load();
-      if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
+      if (all[gameId]) savedSessions.upsert({
+        ...all[gameId],
+        lastMoveAt: Date.now(),
+        ...(next.winner !== null ? { finishReason: 'finished' as const } : {}),
+      });
     } catch (e) {
       setGames(prev => {
         const entry = prev[gameId];
