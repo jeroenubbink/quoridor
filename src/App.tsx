@@ -13,6 +13,8 @@ import {
   connectWithExtension,
   connectWithTempKey,
   connectWithSavedKey,
+  connectWithNsec,
+  nsecHexToBech32,
   fetchLatestGameState,
   pubkeyFromNpub,
   npubFromPubkey,
@@ -118,6 +120,9 @@ export default function App() {
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [confirmAbandon, setConfirmAbandon] = useState<string | null>(null); // gameId pending confirm
   const [copiedId, setCopiedId] = useState<string | null>(null); // tracks which button shows "Copied!"
+  const [showNsecInput, setShowNsecInput] = useState(false);
+  const [nsecInput, setNsecInput] = useState('');
+  const [showNsecReveal, setShowNsecReveal] = useState(false);
 
   const copyWithFeedback = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -412,6 +417,21 @@ export default function App() {
     }
   };
 
+  const handleConnectNsec = async (nsec: string) => {
+    setPhase('connecting');
+    setError('');
+    try {
+      const { pubkey, nsecHex } = await connectWithNsec(nsec);
+      savedKey.save({ type: 'nsec', nsecHex });
+      setMyPubkey(pubkey);
+      setIsAnonymous(false);
+      setPhase('lobby');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Connection failed');
+      setPhase('disconnected');
+    }
+  };
+
   // ── Create game ─────────────────────────────────────────────────────────────
 
   const handleCreate = async () => {
@@ -546,9 +566,14 @@ export default function App() {
         pubkey = await connectWithExtension();
         setIsAnonymous(false);
       } else {
-        if (!sk.nsecHex) throw new Error('Saved ephemeral key is missing');
-        pubkey = await connectWithSavedKey(sk.nsecHex);
-        setIsAnonymous(true);
+        if (!sk.nsecHex) throw new Error('Saved key is missing');
+        if (sk.type === 'nsec') {
+          pubkey = (await connectWithNsec(sk.nsecHex)).pubkey;
+          setIsAnonymous(false);
+        } else {
+          pubkey = await connectWithSavedKey(sk.nsecHex);
+          setIsAnonymous(true);
+        }
       }
       setMyPubkey(pubkey);
 
@@ -680,6 +705,41 @@ export default function App() {
               <button className="btn btn-secondary" onClick={() => handleConnect(false, anonName.trim() || undefined)}>
                 Play anonymous
               </button>
+            </div>
+
+            <div className="nsec-section">
+              <button
+                className="btn-link nsec-toggle"
+                onClick={() => { setShowNsecInput(v => !v); setNsecInput(''); }}
+              >
+                {showNsecInput ? '▲ Hide' : '▼ Use saved key (advanced)'}
+              </button>
+              {showNsecInput && (
+                <div className="nsec-panel">
+                  <p className="nsec-warning">
+                    ⚠ Your nsec <strong>is</strong> your Nostr identity — if it leaks,
+                    your account is compromised permanently. Prefer the extension option
+                    above: your key never leaves it.
+                  </p>
+                  <input
+                    className="form-input"
+                    type="password"
+                    placeholder="nsec1… or 64-char hex"
+                    value={nsecInput}
+                    onChange={e => setNsecInput(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    className="btn btn-secondary"
+                    disabled={!nsecInput.trim()}
+                    onClick={() => handleConnectNsec(nsecInput.trim())}
+                  >
+                    Connect with nsec
+                    <span className="btn-sub">stores key in this browser</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -818,6 +878,42 @@ export default function App() {
                   style={{ marginTop: '0.25rem' }}
                   onClick={() => copyWithFeedback(npubFromPubkey(myPubkey), 'npub')}
                 >{copiedId === 'npub' ? 'Copied!' : 'Copy npub'}</button>
+              )}
+              {isAnonymous && savedKey.load()?.type === 'ephemeral' && (
+                <>
+                  <button
+                    className="btn btn-small btn-ghost"
+                    style={{ marginTop: '0.25rem' }}
+                    onClick={() => setShowNsecReveal(v => !v)}
+                  >
+                    {showNsecReveal ? 'Hide' : 'Continue on another device'}
+                  </button>
+                  {showNsecReveal && (() => {
+                    const sk = savedKey.load();
+                    const bech32 = sk?.nsecHex ? nsecHexToBech32(sk.nsecHex) : '';
+                    return (
+                      <div className="nsec-reveal-panel">
+                        <p className="nsec-info">
+                          Copy this key and paste it on the other device or browser when logging in
+                          — choose "Use saved key" on the login screen.
+                        </p>
+                        <p className="nsec-warning">
+                          ⚠ This is a Nostr private key (nsec). Anyone who sees it can use your
+                          anonymous identity permanently. Only copy it to a device you trust.
+                        </p>
+                        <div className="nsec-reveal-row">
+                          <code className="nsec-reveal-value">{bech32}</code>
+                          <button
+                            className="btn btn-small btn-ghost"
+                            onClick={() => { copyWithFeedback(bech32, 'nsec-export'); setShowNsecReveal(false); }}
+                          >
+                            {copiedId === 'nsec-export' ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
               )}
             </div>
 

@@ -83,6 +83,34 @@ export async function connectWithTempKey(): Promise<{ pubkey: string; nsecHex: s
   return { pubkey: user.pubkey, nsecHex: signer.privateKey! };
 }
 
+export async function connectWithNsec(nsecOrHex: string): Promise<{ pubkey: string; nsecHex: string }> {
+  let privkeyHex: string;
+  if (nsecOrHex.startsWith('nsec1')) {
+    const decoded = nip19.decode(nsecOrHex);
+    if (decoded.type !== 'nsec') throw new Error('Invalid nsec');
+    privkeyHex = Array.from(decoded.data as Uint8Array)
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+  } else {
+    if (!/^[0-9a-f]{64}$/i.test(nsecOrHex)) throw new Error('Invalid private key — must be nsec1… or 64-char hex');
+    privkeyHex = nsecOrHex.toLowerCase();
+  }
+  const signer = new NDKPrivateKeySigner(privkeyHex);
+  _ndk = new NDK({
+    explicitRelayUrls: BOOTSTRAP_RELAYS,
+    signer,
+    enableOutboxModel: true,
+    autoConnectUserRelays: true,
+  });
+  await _ndk.connect(3000);
+  const user = await signer.user();
+  return { pubkey: user.pubkey, nsecHex: privkeyHex };
+}
+
+export function nsecHexToBech32(nsecHex: string): string {
+  const bytes = new Uint8Array(nsecHex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+  return nip19.nsecEncode(bytes);
+}
+
 /** Reconnect using a previously saved ephemeral private key (hex). */
 export async function connectWithSavedKey(nsecHex: string): Promise<string> {
   const signer = new NDKPrivateKeySigner(nsecHex);

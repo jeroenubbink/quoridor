@@ -954,3 +954,71 @@
   width: 1.2rem;
   height: var(--sq);
 }
+
+/* ── nsec login / export ───────────────────────────────────────────── */
+
+.nsec-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.nsec-toggle {
+  background: none;
+  border: none;
+  color: #7a6040;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+  text-align: center;
+}
+
+.nsec-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.nsec-info {
+  font-size: 0.78rem;
+  color: #a89060;
+  background: #221a0c;
+  border: 1px solid #4a3a18;
+  border-radius: 5px;
+  padding: 0.5rem 0.65rem;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.nsec-warning {
+  font-size: 0.78rem;
+  color: #c8882a;
+  background: #2a1e0a;
+  border: 1px solid #7a4a10;
+  border-radius: 5px;
+  padding: 0.5rem 0.65rem;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.nsec-reveal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.nsec-reveal-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.nsec-reveal-value {
+  font-size: 0.7rem;
+  word-break: break-all;
+  color: #e8c880;
+  flex: 1;
+}

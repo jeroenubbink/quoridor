@@ -2,11 +2,11 @@ const P = 'nostridor:';
 
 // ─── Saved key ────────────────────────────────────────────────────────────────
 
-export type SavedKeyType = 'extension' | 'ephemeral';
+export type SavedKeyType = 'extension' | 'ephemeral' | 'nsec';
 
 export interface SavedKey {
   type: SavedKeyType;
-  nsecHex?: string;     // only for ephemeral; stored as plaintext (acceptable for a throwaway key)
+  nsecHex?: string; // present for ephemeral (throwaway) and nsec (real identity) types
   displayName?: string; // chosen name for anonymous sessions
 }
 
