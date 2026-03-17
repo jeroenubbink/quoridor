@@ -129,7 +129,7 @@ export function PlayerSearch({ onSelect, onClear, selectedPubkey }: PlayerSearch
         <input
           ref={inputRef}
           className="form-input"
-          placeholder="Search by name or paste npub…"
+          placeholder="Search by name or paste player ID…"
           value={query}
           onChange={e => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => results.length > 0 && setOpen(true)}

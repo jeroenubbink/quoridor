@@ -29,7 +29,7 @@ import {
   publishInvite,
   subscribeToInvites,
 } from './nostr';
-import { UserCard } from './UserCard';
+import { UserCard, useProfile } from './UserCard';
 import { PlayerSearch } from './PlayerSearch';
 import { savedKey, savedSessions } from './storage';
 import type { NDKSubscription } from '@nostr-dev-kit/ndk';
@@ -73,6 +73,13 @@ interface GameEntry {
   opponentSeen: boolean;          // true once we receive the first event from the opponent
   finishReason?: 'timeout' | 'resign' | 'no-contest';
   opponentLastMove?: OpponentMove;
+}
+
+// ─── Small helpers ───────────────────────────────────────────────────────────
+
+function OpponentName({ pubkey }: { pubkey: string }) {
+  const profile = useProfile(pubkey);
+  return <>{profile?.displayName ?? 'Opponent'}</>;
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -441,6 +448,7 @@ export default function App() {
       savedKey.save({ type: 'nsec', nsecHex });
       setMyPubkey(pubkey);
       setIsAnonymous(false);
+      setNsecInput('');
       setPhase('lobby');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Connection failed');
@@ -480,6 +488,7 @@ export default function App() {
 
   const handleEnterGame = (gameId: string) => {
     setActiveGameId(gameId);
+    setHighlightKey(0);
     setError('');
     setPhase('playing');
   };
@@ -557,7 +566,11 @@ export default function App() {
       const all = savedSessions.load();
       if (all[gameId]) savedSessions.upsert({ ...all[gameId], lastMoveAt: Date.now() });
     } catch (e) {
-      setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState } }));
+      setGames(prev => {
+        const entry = prev[gameId];
+        if (!entry || entry.gameState !== next) return prev; // opponent moved in the meantime
+        return { ...prev, [gameId]: { ...entry, gameState } };
+      });
       setError(e instanceof Error ? e.message : errorLabel);
     }
   }, []);
@@ -699,7 +712,7 @@ export default function App() {
           <div className="connect-buttons">
             <button className="btn btn-primary" onClick={() => handleConnect(true)}>
               Connect with extension
-              <span className="btn-sub">NIP-07 (Alby, nos2x…)</span>
+              <span className="btn-sub">Alby, nos2x, or other Nostr extension</span>
             </button>
 
             <div className="anon-section">
@@ -728,7 +741,7 @@ export default function App() {
                 className="btn-link nsec-toggle"
                 onClick={() => { setShowNsecInput(v => !v); setNsecInput(''); }}
               >
-                {showNsecInput ? '▲ Hide' : '▼ Use saved key (advanced)'}
+                {showNsecInput ? '▲ Hide' : '▼ Log in with private key (advanced)'}
               </button>
               {showNsecInput && (
                 <div className="nsec-panel">
@@ -740,7 +753,7 @@ export default function App() {
                   <input
                     className="form-input"
                     type="password"
-                    placeholder="nsec1… or 64-char hex"
+                    placeholder="Private key (nsec1… or hex)"
                     value={nsecInput}
                     onChange={e => setNsecInput(e.target.value)}
                     autoComplete="off"
@@ -751,7 +764,7 @@ export default function App() {
                     disabled={!nsecInput.trim()}
                     onClick={() => handleConnectNsec(nsecInput.trim())}
                   >
-                    Connect with nsec
+                    Log in with key
                     <span className="btn-sub">stores key in this browser</span>
                   </button>
                 </div>
@@ -796,7 +809,7 @@ export default function App() {
             <ul className="about-features">
               <li>Fully peer-to-peer — game state lives on Nostr relays, no server</li>
               <li>Play with your Nostr identity or jump in anonymously</li>
-              <li>Invite a specific player by searching their name or npub</li>
+              <li>Invite a specific player by searching their name or player ID</li>
               <li>Find a random opponent with one click</li>
               <li>Run multiple games at the same time</li>
               <li>Sessions survive page reloads and reconnects</li>
@@ -893,7 +906,7 @@ export default function App() {
                   className="btn btn-small btn-ghost"
                   style={{ marginTop: '0.25rem' }}
                   onClick={() => copyWithFeedback(npubFromPubkey(myPubkey), 'npub')}
-                >{copiedId === 'npub' ? 'Copied!' : 'Copy npub'}</button>
+                >{copiedId === 'npub' ? 'Copied!' : 'Copy player ID'}</button>
               )}
               {isAnonymous && savedKey.load()?.type === 'ephemeral' && (
                 <>
@@ -1051,22 +1064,26 @@ export default function App() {
               ) : activeEntry.gameState.winner ? (
                 <>
                   <span className={`pname p${activeEntry.gameState.winner}-color`}>
-                    {activeEntry.gameState.winner === activeEntry.session.myPlayer ? 'You' : 'Opponent'}
+                    {activeEntry.gameState.winner === activeEntry.session.myPlayer
+                      ? 'You'
+                      : <OpponentName pubkey={activeEntry.session.opponentPubkey} />}
                   </span>{' '}
                   win{activeEntry.gameState.winner === activeEntry.session.myPlayer ? '!' : 's.'}
                   {activeEntry.finishReason === 'timeout' && ' (timeout)'}
                 </>
               ) : activeEntry.gameState.currentPlayer === activeEntry.session.myPlayer ? (
-                <span className={`pname p${activeEntry.session.myPlayer}-color`}>
-                  Your turn
+                <>
+                  <span className={`pname p${activeEntry.session.myPlayer}-color`}>
+                    Your turn
+                  </span>
                   {activeEntry.opponentLastMove && (
                     <button
                       className="replay-btn"
                       onClick={() => setHighlightKey(k => k + 1)}
                       title="Replay opponent's last move"
-                    >Last opp move</button>
+                    > · Last opp move</button>
                   )}
-                </span>
+                </>
               ) : (
                 <span className="waiting">
                   {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent\'s move…'}

@@ -1,5 +1,14 @@
 const P = 'nostridor:';
 
+function safeSetItem(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // localStorage may be full or unavailable (e.g. private browsing)
+    console.warn('localStorage.setItem failed for key:', key);
+  }
+}
+
 // ─── Saved key ────────────────────────────────────────────────────────────────
 
 export type SavedKeyType = 'extension' | 'ephemeral' | 'nsec';
@@ -11,7 +20,7 @@ export interface SavedKey {
 }
 
 export const savedKey = {
-  save: (data: SavedKey) => localStorage.setItem(P + 'key', JSON.stringify(data)),
+  save: (data: SavedKey) => safeSetItem(P + 'key', JSON.stringify(data)),
   load: (): SavedKey | null => {
     const raw = localStorage.getItem(P + 'key');
     return raw ? (JSON.parse(raw) as SavedKey) : null;
@@ -37,7 +46,7 @@ export const savedSessions = {
     return raw ? (JSON.parse(raw) as Record<string, SavedSession>) : {};
   },
   save: (sessions: Record<string, SavedSession>) =>
-    localStorage.setItem(P + 'sessions', JSON.stringify(sessions)),
+    safeSetItem(P + 'sessions', JSON.stringify(sessions)),
   upsert: (session: SavedSession) => {
     const all = savedSessions.load();
     all[session.gameId] = session;
