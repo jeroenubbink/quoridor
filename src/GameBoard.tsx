@@ -22,6 +22,7 @@ interface Props {
 export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
   const { board, currentPlayer, walls, winner } = state;
   const isMyTurn = !winner && currentPlayer === myPlayer;
+  const flipped = myPlayer === 1;
   const [hoveredWall, setHoveredWall] = useState<[number, number][] | null>(null);
   // Tracks the wall slot key ("row,col") selected by a tap — second tap on same key places.
   const [pendingWall, setPendingWall] = useState<string | null>(null);
@@ -152,38 +153,42 @@ export function GameBoard({ state, myPlayer, onPawnMove, onWallPlace }: Props) {
           Corners have no handler so crossing them doesn't flicker the preview. */}
       <div className="board-wrap">
         <div className="board-col-labels" aria-hidden="true">
-          {['A','B','C','D','E','F','G','H','I'].map(l => (
+          {(flipped ? ['I','H','G','F','E','D','C','B','A'] : ['A','B','C','D','E','F','G','H','I']).map(l => (
             <span key={l} className="coord-label">{l}</span>
           ))}
         </div>
         <div className="board-inner">
           <div className="board-row-labels" aria-hidden="true">
-            {[1,2,3,4,5,6,7,8,9].map(n => (
+            {(flipped ? [9,8,7,6,5,4,3,2,1] : [1,2,3,4,5,6,7,8,9]).map(n => (
               <span key={n} className="coord-label">{n}</span>
             ))}
           </div>
           <div className="board" onMouseLeave={clearPreview}>
-            {Array.from({ length: GRID }, (_, r) => (
-              <div key={r} className="row">
-                {Array.from({ length: GRID }, (_, c) => {
-                  const isSquare = r % 2 === 0 && c % 2 === 0;
-                  const isWallSlot = r % 2 !== c % 2;
-                  return (
-                    <div
-                      key={c}
-                      className={getCellClass(r, c)}
-                      onPointerDown={(e) => handlePointerDown(e, r, c)}
-                      onClick={() => handleClick(r, c)}
-                      onMouseEnter={
-                        isWallSlot ? () => handleWallEnter(r, c) :
-                        isSquare   ? clearPreview :
-                        undefined
-                      }
-                    />
-                  );
-                })}
-              </div>
-            ))}
+            {Array.from({ length: GRID }, (_, ri) => {
+              const r = flipped ? GRID - 1 - ri : ri;
+              return (
+                <div key={r} className="row">
+                  {Array.from({ length: GRID }, (_, ci) => {
+                    const c = flipped ? GRID - 1 - ci : ci;
+                    const isSquare = r % 2 === 0 && c % 2 === 0;
+                    const isWallSlot = r % 2 !== c % 2;
+                    return (
+                      <div
+                        key={c}
+                        className={getCellClass(r, c)}
+                        onPointerDown={(e) => handlePointerDown(e, r, c)}
+                        onClick={() => handleClick(r, c)}
+                        onMouseEnter={
+                          isWallSlot ? () => handleWallEnter(r, c) :
+                          isSquare   ? clearPreview :
+                          undefined
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
