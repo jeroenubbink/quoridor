@@ -816,15 +816,9 @@ export default function App() {
       {/* ── Disconnected ── */}
       {phase === 'disconnected' && (
         <div className="screen connect-screen">
-          <p className="screen-subtitle">Play Quoridor peer-to-peer over Nostr</p>
+          <p className="screen-subtitle">Play Quoridor online — no account needed.</p>
           <div className="connect-buttons">
-            <button className="btn btn-primary" onClick={() => handleConnect(true)}>
-              Connect with extension
-              <span className="btn-sub">Alby, nos2x, or other Nostr extension</span>
-            </button>
-
             <div className="anon-section">
-              <p className="anon-label">— or play anonymous —</p>
               <div className="anon-name-row">
                 <input
                   className="form-input"
@@ -839,9 +833,17 @@ export default function App() {
                   onClick={() => setAnonName(makeFunnyName())}
                 >↺</button>
               </div>
-              <button className="btn btn-secondary" onClick={() => handleConnect(false, anonName.trim() || undefined)}>
+              <button className="btn btn-primary" onClick={() => handleConnect(false, anonName.trim() || undefined)}>
                 Play anonymous
               </button>
+            </div>
+
+            <div className="nostr-login-section">
+              <button className="btn btn-secondary" onClick={() => handleConnect(true)}>
+                Login with Nostr
+                <span className="btn-sub">Alby, nos2x, or other Nostr extension</span>
+              </button>
+              <a className="nostr-what-link" href="https://nostr.com" target="_blank" rel="noreferrer">What is Nostr?</a>
             </div>
 
             <div className="nsec-section">

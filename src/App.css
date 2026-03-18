@@ -136,11 +136,22 @@
   width: 100%;
 }
 
-.anon-label {
-  text-align: center;
-  font-size: 0.8rem;
+.nostr-login-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.nostr-what-link {
+  font-size: 0.75rem;
   color: #7a6040;
-  margin: 0;
+  text-decoration: underline;
+  opacity: 0.8;
+}
+.nostr-what-link:hover {
+  opacity: 1;
 }
 
 .anon-name-row {
