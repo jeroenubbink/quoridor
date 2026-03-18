@@ -96,14 +96,19 @@ function relTime(ts: number): string {
 }
 
 function SeekRow({ entry, onMatch }: { entry: SeekListEntry; onMatch: () => void }) {
+  const [clicked, setClicked] = React.useState(false);
   return (
     <div className="seek-row">
       <div className="seek-row-info">
         <UserCard pubkey={entry.pubkey} size="sm" />
         <span className="seek-row-time">{relTime(entry.createdAt)}</span>
       </div>
-      <button className="btn btn-small btn-primary" onClick={onMatch}>
-        Match
+      <button
+        className="btn btn-small btn-primary"
+        disabled={clicked}
+        onClick={() => { setClicked(true); onMatch(); }}
+      >
+        Play
       </button>
     </div>
   );
