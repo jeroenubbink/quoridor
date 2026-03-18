@@ -498,16 +498,6 @@ export async function cancelOwnStaleSeeks(myPubkey: string): Promise<void> {
   }
 }
 
-/** Returns true if the seek event still exists on relays, false if deleted/missing. */
-export async function fetchSeekEvent(seekerPubkey: string, dTag: string): Promise<boolean> {
-  const ndk = getNdk();
-  const ev = await ndk.fetchEvent({
-    kinds: [GAME_KIND as number],
-    authors: [seekerPubkey],
-    '#d': [dTag],
-  });
-  return ev !== null;
-}
 
 /**
  * Publish a game invite to a specific seeker. The join code is public — the

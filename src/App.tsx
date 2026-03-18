@@ -26,7 +26,6 @@ import {
   publishSeek,
   cancelSeek,
   subscribeToSeekList,
-  fetchSeekEvent,
   cancelOwnStaleSeeks,
   publishInvite,
   subscribeToInvites,
@@ -77,8 +76,6 @@ interface GameEntry {
   opponentSeen: boolean;          // true once we receive the first event from the opponent
   finishReason?: 'timeout' | 'resign' | 'no-contest';
   opponentLastMove?: OpponentMove;
-  originSeekDTag?: string;        // set when game was started by picking from seek list
-  seekGone?: boolean;             // set if race-check finds the seek no longer exists
 }
 
 // ─── Small helpers ───────────────────────────────────────────────────────────
@@ -148,7 +145,6 @@ export default function App() {
   const seeksRef            = useRef<SeekEntry[]>([]);
   seeksRef.current = seeks;
   const availableSeekIdsRef = useRef<Set<string>>(new Set());
-  const seekSubRef          = useRef<NDKSubscription | null>(null);
   const inviteSubRef        = useRef<NDKSubscription | null>(null);
 
   // Seek list (live, keyed by pubkey for easy upsert).
@@ -188,7 +184,6 @@ export default function App() {
 
   useEffect(() => () => {
     subsRef.current.forEach(sub => sub.stop());
-    seekSubRef.current?.stop();
     inviteSubRef.current?.stop();
     seekListSubRef.current?.stop();
     for (const seek of seeksRef.current) {
@@ -277,6 +272,34 @@ export default function App() {
     return () => clearInterval(id);
   }, [phase, checkAllTimeouts]);
 
+  // Refetch game state for all active games when the tab comes back into focus.
+  // Mobile browsers suspend WebSocket connections in the background, so moves
+  // published while the tab was hidden are missed by the subscription.
+  useEffect(() => {
+    if (phase !== 'playing' && phase !== 'lobby') return;
+    const onVisible = async () => {
+      if (document.visibilityState !== 'visible') return;
+      for (const entry of Object.values(gamesRef.current)) {
+        const { session } = entry;
+        if (entry.gameState.winner || entry.finishReason) continue;
+        try {
+          const result = await fetchLatestGameState(session.gameId, session.myPubkey, session.opponentPubkey);
+          if (!result) continue;
+          setGames(prev => {
+            const e = prev[session.gameId];
+            if (!e) return prev;
+            if (result.state.moveNumber <= e.gameState.moveNumber) return prev;
+            const movedBy = e.gameState.currentPlayer;
+            const opponentLastMove = diffBoards(e.gameState.board, result.state.board, movedBy) ?? e.opponentLastMove;
+            return { ...prev, [session.gameId]: { ...e, gameState: result.state, opponentSeen: true, opponentLastMove } };
+          });
+        } catch { /* best-effort */ }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [phase]);
+
   // Subscribe to seek list while in lobby.
   useEffect(() => {
     if (phase !== 'lobby' || !myPubkey) return;
@@ -336,9 +359,7 @@ export default function App() {
 
   // Stop and clean up seek subscriptions (not the seek events themselves).
   const stopSeekSubscriptions = useCallback(() => {
-    seekSubRef.current?.stop();
     inviteSubRef.current?.stop();
-    seekSubRef.current = null;
     inviteSubRef.current = null;
   }, []);
 
@@ -451,26 +472,10 @@ export default function App() {
       await publishInvite(opponentPubkey, gameId, code, opponentSeekDTag ?? '');
 
       const session: Session = { myPubkey, opponentPubkey, gameId, myPlayer: creatorPlayer, lastEventId: eventId, joinCode: code, isCreator: true };
-      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false, originSeekDTag: opponentSeekDTag } }));
+      setGames(prev => ({ ...prev, [gameId]: { session, gameState: initial, opponentSeen: false } }));
       savedSessions.upsert({ gameId, myPubkey, opponentPubkey, myPlayer: creatorPlayer, joinCode: code, lastMoveAt: Date.now() });
       setActiveGameId(gameId);
       setPhase('playing');
-
-      // Race-condition check: 30 s after picking, verify the seek still existed.
-      if (opponentSeekDTag) {
-        setTimeout(async () => {
-          const entry = gamesRef.current[gameId];
-          if (!entry || entry.opponentSeen) return;
-          const stillSeeking = await fetchSeekEvent(opponentPubkey, opponentSeekDTag);
-          if (!stillSeeking) {
-            setGames(prev => {
-              const e = prev[gameId];
-              if (!e || e.opponentSeen) return prev;
-              return { ...prev, [gameId]: { ...e, seekGone: true } };
-            });
-          }
-        }, 30_000);
-      }
     } catch (e) {
       subsRef.current.get(gameId)?.stop();
       subsRef.current.delete(gameId);
@@ -1219,16 +1224,9 @@ export default function App() {
                   )}
                 </>
               ) : (
-                <>
-                  <span className="waiting">
-                    {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent\'s move…'}
-                  </span>
-                  {!activeEntry.opponentSeen && activeEntry.seekGone && (
-                    <p className="seek-gone-warning">
-                      ⚠ Your opponent may have already been matched by someone else. You can resign and pick another.
-                    </p>
-                  )}
-                </>
+                <span className="waiting">
+                  {!activeEntry.opponentSeen ? 'Waiting for opponent to join…' : 'Waiting for opponent\'s move…'}
+                </span>
               )}
             </div>
             <div className="game-players">

@@ -245,13 +245,12 @@ export function validateIncomingState(
     }
   }
 
-  // Forfeit/timeout: no board change, only winner set
-  if (incoming.moveNumber === current.moveNumber) {
+  // Forfeit/timeout: no board change, only winner set.
+  // Also accept when the resigner's moveNumber is behind ours — they lagged and
+  // are surrendering from a stale state, which is always a valid concession.
+  const receiver = (3 - expectedMover) as Player;
+  if (incoming.winner === receiver && incoming.moveNumber <= current.moveNumber) {
     if (diffs.length !== 0) return false;
-    // Accept if winner is set to us (the receiving player = 3 - expectedMover)
-    const receiver = (3 - expectedMover) as Player;
-    if (incoming.winner !== receiver) return false;
-    if (incoming.walls[0] !== current.walls[0] || incoming.walls[1] !== current.walls[1]) return false;
     return true;
   }
 
