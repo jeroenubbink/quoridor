@@ -16,13 +16,13 @@ Two players, one pawn each, opposite sides of a 9×9 grid. First to reach the ot
 
 ## Features
 
+- **No account needed** — jump in with an auto-generated anonymous name, or connect with a NIP-07 browser extension (Alby, nos2x, …) for a persistent Nostr identity
 - **Fully peer-to-peer** — game state lives on Nostr relays as NIP-44 encrypted kind-30078 events; no central server
-- **Nostr identity or anonymous play** — connect with a NIP-07 browser extension (Alby, nos2x, …) or jump in with an auto-generated anonymous name
+- **Seek list matchmaking** — browse players looking for a game and pick one; your own seek stays listed until you cancel it or get matched
 - **Invite a specific player** — search by name or paste an npub; NIP-50 full-text search via relay.nostr.band
-- **Async random matchmaking** — seek events persist for 24 hours; you get matched whenever another seeker shows up, even if you're not online at the same time
-- **Multiple simultaneous seeks** — post up to 4 random-seek requests at once; each is matched and cancelled independently
 - **Multiple simultaneous games** — all games live side by side in the lobby, organised into Active / New / History tabs
 - **Session persistence** — sessions survive page reloads; reconnect picks up the latest state from relays
+- **Mobile-friendly** — reconnects and re-syncs game state when a backgrounded tab comes back into focus
 - **Browser notifications** — get pinged when it's your turn
 - **NIP-05 verification** — display names and verified identifiers shown via NIP-01 kind-0 profiles
 - **Automatic timeout enforcement** — if an opponent does not move within 2 days the game resolves automatically; "no contest" if no moves were made at all
@@ -65,11 +65,11 @@ Output goes to `dist/` and can be served as a static site from any host.
 
 Each move is published as a **kind-30078 parameterized replaceable event**. The content is the full game state serialised as JSON and encrypted with NIP-44 to the opponent's public key. Because the event kind is replaceable, each player's relay only keeps their latest state — old moves are superseded automatically.
 
-Matchmaking uses two ephemeral event tags:
-- `quoridor-seek` — broadcast that you're looking for a game (carries a `v` tag for protocol version)
+Matchmaking uses two event tags:
+- `quoridor-seek` — broadcast that you're looking for a game (carries a `v` tag for protocol version); refreshed every 2 minutes to stay visible; stale seeks from closed tabs are cleaned up on lobby entry
 - `quoridor-invite` — direct invite to a specific seeker (carries a `seek` tag referencing the matched seek d-tag so the seeker can cancel it)
 
-The player with the lower pubkey hex creates the game in a random seek match. In a manual invite the invitee always moves first.
+The player who sends the invite is Player 1 and moves first.
 
 Game state events carry a `version` field; a state update is rejected if it was produced by a different protocol version.
 
