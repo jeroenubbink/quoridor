@@ -29,6 +29,7 @@ import {
   cancelOwnStaleSeeks,
   publishInvite,
   subscribeToInvites,
+  reconnectRelays,
   type SeekListEntry,
 } from './nostr';
 import { UserCard, useProfile } from './UserCard';
@@ -284,6 +285,21 @@ export default function App() {
     if (phase !== 'playing' && phase !== 'lobby') return;
     const onVisible = async () => {
       if (document.visibilityState !== 'visible') return;
+
+      // Re-establish WebSocket connections that the browser may have killed
+      // while the tab was backgrounded.
+      reconnectRelays();
+
+      // Re-subscribe to all active games so we don't miss moves published
+      // while the tab was hidden (subscriptions over dead WebSockets are lost).
+      for (const entry of Object.values(gamesRef.current)) {
+        const { session } = entry;
+        if (entry.gameState.winner || entry.finishReason) continue;
+        addSubscription(session.gameId, session.myPlayer, session.opponentPubkey);
+      }
+
+      // Fetch latest state as a catch-up safety net (handles the window between
+      // the tab going hidden and the subscription being re-established above).
       for (const entry of Object.values(gamesRef.current)) {
         const { session } = entry;
         if (entry.gameState.winner || entry.finishReason) continue;

@@ -31,6 +31,16 @@ export function getNdk(): NDK {
   return _ndk;
 }
 
+// Reconnect all relays in the pool. Call this when the tab becomes visible
+// after a long background period — browsers kill WebSocket connections and
+// NDK may not have detected the drop yet.
+export function reconnectRelays(): void {
+  if (!_ndk) return;
+  _ndk.pool?.relays.forEach(relay => {
+    relay.connect().catch(() => {}); // best-effort
+  });
+}
+
 // ─── Connection ───────────────────────────────────────────────────────────────
 
 async function initNdk(signer: NDKNip07Signer | NDKPrivateKeySigner, autoConnectUserRelays: boolean): Promise<NDK> {
