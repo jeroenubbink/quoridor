@@ -37,7 +37,7 @@ export interface SavedSession {
   myPlayer: 1 | 2;
   joinCode: string;
   lastMoveAt?: number;      // ms timestamp of the most recent move (ours or opponent's)
-  finishReason?: 'timeout' | 'resign' | 'no-contest' | 'finished';
+  finishReason?: 'timeout' | 'resign' | 'no-contest';
 }
 
 export const savedSessions = {

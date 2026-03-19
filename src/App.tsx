@@ -359,7 +359,6 @@ export default function App() {
           if (all[gameId]) savedSessions.upsert({
             ...all[gameId],
             lastMoveAt: Date.now(),
-            ...(incoming.winner !== null ? { finishReason: 'finished' as const } : {}),
           });
           const movedBy = entry.gameState.currentPlayer;
           const opponentLastMove =
@@ -691,7 +690,6 @@ export default function App() {
       if (all[gameId]) savedSessions.upsert({
         ...all[gameId],
         lastMoveAt: Date.now(),
-        ...(next.winner !== null ? { finishReason: 'finished' as const } : {}),
       });
     } catch (e) {
       setGames(prev => {
@@ -742,6 +740,12 @@ export default function App() {
       for (const ss of Object.values(all)) {
         addSubscription(ss.gameId, ss.myPlayer, ss.opponentPubkey);
         const resumed = await fetchLatestGameState(ss.gameId, ss.myPubkey, ss.opponentPubkey);
+
+        // Backward-compat: old storage may have finishReason: 'finished' (since removed).
+        // If the relay fetch also failed, we have no winner info — skip rather than show
+        // the game as active. It reappears correctly once the relay is reachable again.
+        if ((ss.finishReason as string) === 'finished' && !resumed) continue;
+
         const gameState = resumed?.state ?? createInitialState();
         // Derive isCreator: the creator's npub is the 2nd segment of the join code
         const joinParts = ss.joinCode.split(':');
@@ -757,8 +761,7 @@ export default function App() {
           joinCode: ss.joinCode,
           isCreator,
         };
-        const fr = ss.finishReason === 'finished' ? undefined : ss.finishReason;
-        newGames[ss.gameId] = { session, gameState, opponentSeen: false, finishReason: fr };
+        newGames[ss.gameId] = { session, gameState, opponentSeen: false, finishReason: ss.finishReason };
       }
 
       setGames(newGames);
