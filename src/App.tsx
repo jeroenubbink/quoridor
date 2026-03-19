@@ -1098,53 +1098,94 @@ export default function App() {
             {/* New game */}
             {lobbySection === 'new' && (
               <>
-                <div className="seek-section">
-                  {seeks.length === 0 ? (
-                    <button className="btn btn-secondary" onClick={handleAddSeek}>
-                      Add me to the list
-                      <span className="btn-sub">let others match you while you wait</span>
-                    </button>
-                  ) : (
-                    <div className="seeking-status">
-                      <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
-                      <span>You are in the list</span>
-                      <button className="btn btn-small btn-ghost" onClick={() => handleCancelSeek(seeks[0].id)}>Cancel</button>
-                    </div>
-                  )}
+                {(() => {
+                  const entries = Object.values(seekList)
+                    .filter(e => e.pubkey !== myPubkey)
+                    .sort((a, b) => b.createdAt - a.createdAt);
+                  const PAGE_SIZE = 5;
+                  const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+                  const page = Math.min(seekPage, totalPages - 1);
+                  const pageEntries = entries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+                  const isInQueue = seeks.length > 0;
+                  const hasOtherSeekers = entries.length > 0;
+                  return (
+                    <div className="seek-section">
+                      {!isInQueue && !hasOtherSeekers && (
+                        <div className="seek-empty-state">
+                          <p className="seek-empty-heading">No opponents available yet.</p>
+                          <p className="seek-empty-body">
+                            Be the first in the queue — when another player opens the game,
+                            they'll see you here and can start a game with you.
+                          </p>
+                          <button className="btn btn-primary" onClick={handleAddSeek}>
+                            Find an opponent
+                          </button>
+                        </div>
+                      )}
 
-                  <div className="seek-list-section">
-                    <h3 className="seek-list-header">Players looking for a game</h3>
-                    {(() => {
-                      const entries = Object.values(seekList).filter(e => e.pubkey !== myPubkey).sort((a, b) => b.createdAt - a.createdAt);
-                      const PAGE_SIZE = 5;
-                      const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
-                      const page = Math.min(seekPage, totalPages - 1);
-                      const pageEntries = entries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-                      return entries.length === 0 ? (
-                        <p className="seek-list-empty">No one is looking for a game right now.</p>
-                      ) : (
+                      {!isInQueue && hasOtherSeekers && (
                         <>
+                          <h3 className="seek-list-header">Players looking for a game</h3>
                           <div className="seek-list">
                             {pageEntries.map(entry => (
-                              <SeekRow
-                                key={entry.pubkey}
-                                entry={entry}
-                                onMatch={() => handlePickSeeker(entry)}
-                              />
+                              <SeekRow key={entry.pubkey} entry={entry} onMatch={() => handlePickSeeker(entry)} />
                             ))}
                           </div>
                           {totalPages > 1 && (
                             <div className="seek-list-pagination">
-                              <button className="btn btn-small btn-ghost" disabled={page === 0} onClick={() => setSeekPage(p => Math.max(0, p - 1))}>← Prev</button>
+                              <button className="btn btn-small btn-ghost" disabled={page === 0}
+                                onClick={() => setSeekPage(p => Math.max(0, p - 1))}>← Prev</button>
                               <span>{page + 1} / {totalPages}</span>
-                              <button className="btn btn-small btn-ghost" disabled={page >= totalPages - 1} onClick={() => setSeekPage(p => Math.min(totalPages - 1, p + 1))}>Next →</button>
+                              <button className="btn btn-small btn-ghost" disabled={page >= totalPages - 1}
+                                onClick={() => setSeekPage(p => Math.min(totalPages - 1, p + 1))}>Next →</button>
                             </div>
                           )}
+                          <div className="seek-or-divider">or</div>
+                          <button className="btn btn-secondary" onClick={handleAddSeek}>
+                            Add me to the list
+                            <span className="btn-sub">join the queue — others can pick you</span>
+                          </button>
                         </>
-                      );
-                    })()}
-                  </div>
-                </div>
+                      )}
+
+                      {isInQueue && (
+                        <>
+                          <div className="seeking-status">
+                            <div className="spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+                            <span>Waiting for an opponent...</span>
+                            <button className="btn btn-small btn-ghost"
+                              onClick={() => handleCancelSeek(seeks[0].id)}>Cancel</button>
+                          </div>
+                          {!hasOtherSeekers && (
+                            <p className="seek-hint">
+                              When someone opens the game, they'll see you and can start a game.
+                            </p>
+                          )}
+                          {hasOtherSeekers && (
+                            <>
+                              <div className="seek-or-divider">Or pick someone already waiting</div>
+                              <div className="seek-list">
+                                {pageEntries.map(entry => (
+                                  <SeekRow key={entry.pubkey} entry={entry} onMatch={() => handlePickSeeker(entry)} />
+                                ))}
+                              </div>
+                              {totalPages > 1 && (
+                                <div className="seek-list-pagination">
+                                  <button className="btn btn-small btn-ghost" disabled={page === 0}
+                                    onClick={() => setSeekPage(p => Math.max(0, p - 1))}>← Prev</button>
+                                  <span>{page + 1} / {totalPages}</span>
+                                  <button className="btn btn-small btn-ghost" disabled={page >= totalPages - 1}
+                                    onClick={() => setSeekPage(p => Math.min(totalPages - 1, p + 1))}>Next →</button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
 
                 <div className="tabs">
                   <button className={`tab ${newGameTab === 'create' ? 'active' : ''}`} onClick={() => setNewGameTab('create')}>
