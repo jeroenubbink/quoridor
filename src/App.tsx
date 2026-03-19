@@ -290,36 +290,37 @@ export default function App() {
       // while the tab was backgrounded.
       reconnectRelays();
 
-      // Re-subscribe to all active games so we don't miss moves published
-      // while the tab was hidden (subscriptions over dead WebSockets are lost).
-      for (const entry of Object.values(gamesRef.current)) {
-        const { session } = entry;
-        if (entry.gameState.winner || entry.finishReason) continue;
+      // Re-subscribe to all active games and fetch latest state in parallel.
+      const activeEntries = Object.values(gamesRef.current)
+        .filter(entry => !entry.gameState.winner && !entry.finishReason);
+
+      for (const { session } of activeEntries) {
         addSubscription(session.gameId, session.myPlayer, session.opponentPubkey);
       }
 
-      // Fetch latest state as a catch-up safety net (handles the window between
-      // the tab going hidden and the subscription being re-established above).
-      for (const entry of Object.values(gamesRef.current)) {
-        const { session } = entry;
-        if (entry.gameState.winner || entry.finishReason) continue;
-        try {
-          const result = await fetchLatestGameState(session.gameId, session.myPubkey, session.opponentPubkey);
-          if (!result) continue;
-          setGames(prev => {
-            const e = prev[session.gameId];
-            if (!e) return prev;
-            if (result.state.moveNumber <= e.gameState.moveNumber) return prev;
-            const movedBy = e.gameState.currentPlayer;
-            const opponentLastMove = diffBoards(e.gameState.board, result.state.board, movedBy) ?? e.opponentLastMove;
-            return { ...prev, [session.gameId]: { ...e, gameState: result.state, opponentSeen: true, opponentLastMove } };
-          });
-        } catch { /* best-effort */ }
+      const results = await Promise.allSettled(
+        activeEntries.map(({ session }) =>
+          fetchLatestGameState(session.gameId, session.myPubkey, session.opponentPubkey)
+            .then(result => result ? { gameId: session.gameId, result } : null)
+        ),
+      );
+
+      for (const settled of results) {
+        if (settled.status !== 'fulfilled' || !settled.value) continue;
+        const { gameId, result } = settled.value;
+        setGames(prev => {
+          const e = prev[gameId];
+          if (!e) return prev;
+          if (result.state.moveNumber <= e.gameState.moveNumber) return prev;
+          const movedBy = e.gameState.currentPlayer;
+          const opponentLastMove = diffBoards(e.gameState.board, result.state.board, movedBy) ?? e.opponentLastMove;
+          return { ...prev, [gameId]: { ...e, gameState: result.state, opponentSeen: true, opponentLastMove } };
+        });
       }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [phase]);
+  }, [phase]); // addSubscription is stable (useCallback with [] deps)
 
   // Subscribe to seek list while in lobby.
   useEffect(() => {
@@ -738,7 +739,6 @@ export default function App() {
       const newGames: Record<string, GameEntry> = {};
 
       for (const ss of Object.values(all)) {
-        addSubscription(ss.gameId, ss.myPlayer, ss.opponentPubkey);
         const resumed = await fetchLatestGameState(ss.gameId, ss.myPubkey, ss.opponentPubkey);
 
         // Backward-compat: old storage may have finishReason: 'finished' (since removed).
@@ -746,6 +746,7 @@ export default function App() {
         // the game as active. It reappears correctly once the relay is reachable again.
         if ((ss.finishReason as string) === 'finished' && !resumed) continue;
 
+        addSubscription(ss.gameId, ss.myPlayer, ss.opponentPubkey);
         const gameState = resumed?.state ?? createInitialState();
         // Derive isCreator: the creator's npub is the 2nd segment of the join code
         const joinParts = ss.joinCode.split(':');
@@ -1127,6 +1128,26 @@ export default function App() {
                   const pageEntries = entries.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
                   const isInQueue = seeks.length > 0;
                   const hasOtherSeekers = entries.length > 0;
+
+                  const seekListBlock = (
+                    <>
+                      <div className="seek-list">
+                        {pageEntries.map(entry => (
+                          <SeekRow key={entry.pubkey} entry={entry} onMatch={() => handlePickSeeker(entry)} />
+                        ))}
+                      </div>
+                      {totalPages > 1 && (
+                        <div className="seek-list-pagination">
+                          <button className="btn btn-small btn-ghost" disabled={page === 0}
+                            onClick={() => setSeekPage(p => Math.max(0, p - 1))}>← Prev</button>
+                          <span>{page + 1} / {totalPages}</span>
+                          <button className="btn btn-small btn-ghost" disabled={page >= totalPages - 1}
+                            onClick={() => setSeekPage(p => Math.min(totalPages - 1, p + 1))}>Next →</button>
+                        </div>
+                      )}
+                    </>
+                  );
+
                   return (
                     <div className="seek-section">
                       {!isInQueue && !hasOtherSeekers && (
@@ -1145,20 +1166,7 @@ export default function App() {
                       {!isInQueue && hasOtherSeekers && (
                         <>
                           <h3 className="seek-list-header">Players looking for a game</h3>
-                          <div className="seek-list">
-                            {pageEntries.map(entry => (
-                              <SeekRow key={entry.pubkey} entry={entry} onMatch={() => handlePickSeeker(entry)} />
-                            ))}
-                          </div>
-                          {totalPages > 1 && (
-                            <div className="seek-list-pagination">
-                              <button className="btn btn-small btn-ghost" disabled={page === 0}
-                                onClick={() => setSeekPage(p => Math.max(0, p - 1))}>← Prev</button>
-                              <span>{page + 1} / {totalPages}</span>
-                              <button className="btn btn-small btn-ghost" disabled={page >= totalPages - 1}
-                                onClick={() => setSeekPage(p => Math.min(totalPages - 1, p + 1))}>Next →</button>
-                            </div>
-                          )}
+                          {seekListBlock}
                           <div className="seek-or-divider">or</div>
                           <button className="btn btn-secondary" onClick={handleAddSeek}>
                             Add me to the list
@@ -1183,20 +1191,7 @@ export default function App() {
                           {hasOtherSeekers && (
                             <>
                               <div className="seek-or-divider">Or pick someone already waiting</div>
-                              <div className="seek-list">
-                                {pageEntries.map(entry => (
-                                  <SeekRow key={entry.pubkey} entry={entry} onMatch={() => handlePickSeeker(entry)} />
-                                ))}
-                              </div>
-                              {totalPages > 1 && (
-                                <div className="seek-list-pagination">
-                                  <button className="btn btn-small btn-ghost" disabled={page === 0}
-                                    onClick={() => setSeekPage(p => Math.max(0, p - 1))}>← Prev</button>
-                                  <span>{page + 1} / {totalPages}</span>
-                                  <button className="btn btn-small btn-ghost" disabled={page >= totalPages - 1}
-                                    onClick={() => setSeekPage(p => Math.min(totalPages - 1, p + 1))}>Next →</button>
-                                </div>
-                              )}
+                              {seekListBlock}
                             </>
                           )}
                         </>
