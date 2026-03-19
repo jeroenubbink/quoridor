@@ -145,6 +145,8 @@ export default function App() {
 
   // One subscription per game.
   const subsRef = useRef<Map<string, NDKSubscription>>(new Map());
+  // Prevent concurrent publishMove calls (double-click before React re-renders).
+  const publishingRef = useRef(false);
 
   // ── Matchmaking state ───────────────────────────────────────────────────────
   const [seeks, setSeeks] = useState<SeekEntry[]>([]);
@@ -664,6 +666,7 @@ export default function App() {
   // ── Move handlers ───────────────────────────────────────────────────────────
 
   const handleMove = useCallback(async (applyFn: (state: GameState) => GameState, errorLabel: string) => {
+    if (publishingRef.current) return; // prevent double-click race
     const gameId = activeGameIdRef.current;
     if (!gameId) return;
     const entry = gamesRef.current[gameId];
@@ -671,6 +674,7 @@ export default function App() {
     const { session, gameState } = entry;
     const next = applyFn(gameState);
 
+    publishingRef.current = true;
     setGames(prev => ({ ...prev, [gameId]: { ...prev[gameId], gameState: next } }));
 
     try {
@@ -699,6 +703,8 @@ export default function App() {
         return { ...prev, [gameId]: { ...entry, gameState } };
       });
       setError(e instanceof Error ? e.message : errorLabel);
+    } finally {
+      publishingRef.current = false;
     }
   }, []);
 

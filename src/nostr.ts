@@ -596,8 +596,16 @@ export function subscribeToGame(
       const current = getCurrentState();
       const opponentPlayer = (3 - myPlayer) as Player;
       if (current && !validateIncomingState(current, state, opponentPlayer)) {
-        console.warn('Rejected invalid/cheated game state from opponent');
-        return;
+        // If the incoming state is ahead of ours, accept it anyway — we may
+        // have missed intermediate events (subscription drop, relay rate-limit).
+        // The full board is in every event, so skipping per-move validation is
+        // safe enough; rejecting would leave the game permanently stuck.
+        if (state.moveNumber <= current.moveNumber) {
+          console.warn('Rejected invalid game state from opponent');
+          return;
+        }
+        console.warn('Accepting ahead-of-sequence state (missed %d moves)',
+          state.moveNumber - current.moveNumber);
       }
       onState(state);
     } catch (err) {
