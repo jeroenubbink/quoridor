@@ -97,7 +97,7 @@ function relTime(ts: number): string {
 }
 
 function SeekRow({ entry, onMatch }: { entry: SeekListEntry; onMatch: () => void }) {
-  const [clicked, setClicked] = React.useState(false);
+  const [clicked, setClicked] = useState(false);
   return (
     <div className="seek-row">
       <div className="seek-row-info">
