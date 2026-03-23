@@ -82,11 +82,11 @@
   justify-content: center;
   margin-top: 4rem;
   gap: 1.2rem;
-  color: #a89060;
+  color: #c4a870;
 }
 
 .screen-subtitle {
-  color: #a89060;
+  color: #c4a870;
   margin: 0 0 2rem;
   font-size: 1rem;
 }
@@ -117,7 +117,7 @@
 
 .resume-label {
   font-size: 0.8rem;
-  color: #a89060;
+  color: #c4a870;
   width: 5rem;
   flex-shrink: 0;
 }
@@ -146,7 +146,7 @@
 
 .nostr-what-link {
   font-size: 0.75rem;
-  color: #7a6040;
+  color: #9a7c50;
   text-decoration: underline;
   opacity: 0.8;
 }
@@ -177,7 +177,7 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #7a6040;
+  color: #9a7c50;
   margin: 0;
 }
 
@@ -187,7 +187,7 @@
 
 .about-text {
   font-size: 0.85rem;
-  color: #a89060;
+  color: #c4a870;
   line-height: 1.6;
   margin: 0;
 }
@@ -203,7 +203,7 @@
 
 .about-meta {
   font-size: 0.78rem;
-  color: #6a5030;
+  color: #8a6840;
 }
 
 .about-features {
@@ -213,7 +213,7 @@
   flex-direction: column;
   gap: 0.3rem;
   font-size: 0.85rem;
-  color: #a89060;
+  color: #c4a870;
   line-height: 1.5;
 }
 
