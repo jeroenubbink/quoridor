@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#241008"/>
+      <stop offset="100%" stop-color="#0a0402"/>
+    </linearGradient>
+    <radialGradient id="leftglow" cx="0%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#3a1a08" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#0a0402" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rp" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#ff9999"/>
+      <stop offset="100%" stop-color="#cc1111"/>
+    </radialGradient>
+    <radialGradient id="bp" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#9999ff"/>
+      <stop offset="100%" stop-color="#1122cc"/>
+    </radialGradient>
+    <filter id="bshadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="22" flood-color="rgba(0,0,0,0.9)"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#leftglow)"/>
+
+  <!-- Divider line -->
+  <line x1="60" y1="502" x2="560" y2="502" stroke="#52300a" stroke-width="1.5"/>
+
+  <!-- Logo (favicon geometry scaled 3x) -->
+  <g transform="translate(60,70) scale(3)">
+    <rect width="32" height="32" rx="3" fill="#b8832a"/>
+    <rect x="2"  y="2"  width="8" height="8" fill="#f0d878"/>
+    <rect x="12" y="2"  width="8" height="8" fill="#f0d878"/>
+    <rect x="22" y="2"  width="8" height="8" fill="#f0d878"/>
+    <rect x="2"  y="12" width="8" height="8" fill="#f0d878"/>
+    <rect x="12" y="12" width="8" height="8" fill="#f0d878"/>
+    <rect x="22" y="12" width="8" height="8" fill="#f0d878"/>
+    <rect x="2"  y="22" width="8" height="8" fill="#f0d878"/>
+    <rect x="12" y="22" width="8" height="8" fill="#f0d878"/>
+    <rect x="22" y="22" width="8" height="8" fill="#f0d878"/>
+    <rect x="10" y="2"  width="2" height="18" fill="#1a0804"/>
+    <circle cx="26" cy="6"  r="3.5" fill="url(#rp)"/>
+    <circle cx="6"  cy="26" r="3.5" fill="url(#bp)"/>
+  </g>
+
+  <!-- Title -->
+  <text x="60" y="310"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="106" font-weight="bold" letter-spacing="-3"
+        fill="#f0d878">Quoridor</text>
+
+  <!-- Subtitle -->
+  <text x="60" y="380"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="26" fill="#c89060">Strategy board game &#x00B7; No account needed</text>
+
+  <!-- URL -->
+  <text x="60" y="565"
+        font-family="'Courier New', Courier, monospace"
+        font-size="22" fill="#7a5030">quor.blackbyte.nl</text>
+
+  <!-- Board (outer border + surface) -->
+  <!-- sq=36, gap=5, step=41 -->
+  <!-- board outer: x=700,y=115,w=400,h=400 -->
+  <!-- board surface: x=706,y=121,w=388,h=388 -->
+  <!-- grid start: x=718,y=133 -->
+  <!-- col x: 718 759 800 841 882 923 964 1005 1046 -->
+  <!-- row y: 133 174 215 256 297 338 379  420  461  -->
+  <g filter="url(#bshadow)">
+    <rect x="700" y="115" width="400" height="400" rx="7" fill="#52300a"/>
+    <rect x="706" y="121" width="388" height="388" rx="5" fill="#b8832a"/>
+  </g>
+
+  <!-- Goal row highlights (subtle) -->
+  <!-- Row 0: blue's destination -->
+  <rect x="718" y="133" width="364" height="36" fill="#1122cc" opacity="0.12"/>
+  <!-- Row 8: red's destination -->
+  <rect x="718" y="461" width="364" height="36" fill="#cc1111" opacity="0.12"/>
+
+  <!-- Cells (81 rects) -->
+  <!-- Row 0 (y=133) -->
+  <rect x="718" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="133" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="133" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 1 (y=174) -->
+  <rect x="718" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="174" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="174" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 2 (y=215) -->
+  <rect x="718" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="215" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="215" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 3 (y=256) -->
+  <rect x="718" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="256" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="256" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 4 (y=297) -->
+  <rect x="718" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="297" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="297" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 5 (y=338) -->
+  <rect x="718" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="338" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="338" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 6 (y=379) -->
+  <rect x="718" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="379" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="379" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 7 (y=420) -->
+  <rect x="718" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="420" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="420" width="36" height="36" fill="#f0d878"/>
+  <!-- Row 8 (y=461) -->
+  <rect x="718" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="759" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="800" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="841" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="882" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="923" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="964" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="1005" y="461" width="36" height="36" fill="#f0d878"/>
+  <rect x="1046" y="461" width="36" height="36" fill="#f0d878"/>
+
+  <!-- Walls (dark brown) -->
+  <!-- H-wall: x=718+c*41, y=133+r*41+36, w=77, h=5 -->
+  <!-- V-wall: x=718+c*41+36, y=133+r*41, w=5, h=77 -->
+
+  <!-- H at cols 3-4, between rows 1-2: x=841, y=210 -->
+  <rect x="841" y="210" width="77" height="5" fill="#1a0804"/>
+  <!-- H at cols 4-5, between rows 3-4: x=882, y=292 -->
+  <rect x="882" y="292" width="77" height="5" fill="#1a0804"/>
+  <!-- V at cols 5-6, rows 3-4: x=959, y=256 -->
+  <rect x="959" y="256" width="5" height="77" fill="#1a0804"/>
+  <!-- V at cols 2-3, rows 5-6: x=836, y=338 -->
+  <rect x="836" y="338" width="5" height="77" fill="#1a0804"/>
+  <!-- H at cols 1-2, between rows 5-6: x=759, y=374 -->
+  <rect x="759" y="374" width="77" height="5" fill="#1a0804"/>
+  <!-- V at cols 6-7, rows 1-2: x=1000, y=174 -->
+  <rect x="1000" y="174" width="5" height="77" fill="#1a0804"/>
+
+  <!-- Pawns -->
+  <!-- Red at col=4, row=2: center (900, 233) -->
+  <circle cx="900" cy="233" r="14" fill="url(#rp)"/>
+  <!-- Blue at col=4, row=6: center (900, 397) -->
+  <circle cx="900" cy="397" r="14" fill="url(#bp)"/>
+</svg>
