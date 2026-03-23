@@ -22,7 +22,7 @@ Two players, one pawn each, opposite sides of a 9×9 grid. First to reach the ot
 - **Invite a specific player** — search by name or paste an npub; NIP-50 full-text search via relay.nostr.band
 - **Multiple simultaneous games** — all games live side by side in the lobby, organised into Active / New / History tabs
 - **Session persistence** — sessions survive page reloads; reconnect picks up the latest state from relays
-- **Resilient connections** — on tab focus, relay WebSockets are reconnected, game subscriptions are re-established, and the latest state is fetched; moves are not lost after a tab has been backgrounded
+- **Resilient connections** — on tab focus, relay WebSockets are reconnected, game subscriptions are re-established, and the latest state is fetched; if a subscription drop causes a gap in move sequence the game self-heals by accepting the opponent's next state directly
 - **Browser notifications** — get pinged when it's your turn
 - **NIP-05 verification** — display names and verified identifiers shown via NIP-01 kind-0 profiles
 - **Automatic timeout enforcement** — if an opponent does not move within 2 days the game resolves automatically; "no contest" if no moves were made at all
@@ -71,7 +71,7 @@ Matchmaking uses two event tags:
 
 The player who sends the invite is Player 1 and moves first.
 
-Game state events carry a `version` field; a state update is rejected if it was produced by a different protocol version.
+Game state events carry a `version` field; a state update is rejected if it was produced by a different protocol version. Incoming moves are validated against the current board; if a subscription drop caused intermediate moves to be missed, the next valid state from the opponent is still accepted so the game never gets permanently stuck.
 
 ---
 
