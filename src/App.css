@@ -1046,6 +1046,17 @@
   justify-content: center;
 }
 
+@media (max-width: 500px) {
+  .board {
+    border-width: 4px;
+    padding: 8px;
+  }
+  .board-wrap {
+    --sq: min(52px, calc((100vw - 56px) / 10.76));
+    --gap: calc(var(--sq) * 0.22);
+  }
+}
+
 /* ── nsec login / export ───────────────────────────────────────────── */
 
 .nsec-section {
