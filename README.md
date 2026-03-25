@@ -18,7 +18,7 @@ Two players, one pawn each, opposite sides of a 9×9 grid. First to reach the ot
 
 - **No account needed** — jump in with an auto-generated anonymous name, or connect with a NIP-07 browser extension (Alby, nos2x, …) for a persistent Nostr identity
 - **Fully peer-to-peer** — game state lives on Nostr relays as NIP-44 encrypted kind-30078 events; no central server
-- **Seek list matchmaking** — four context-aware states guide you through finding a game: empty CTA when no one is around, list-first with a queue option when others are waiting, or a live spinner with the option to pick someone while you wait
+- **Seek list matchmaking** — four context-aware states guide you through finding a game: empty CTA when no one is around, list-first with a queue option when others are waiting, or a live spinner with the option to pick someone while you wait; a "match claim" event is published the moment you pick an opponent so other clients remove the seek immediately and double-matching is detected
 - **Invite a specific player** — search by name or paste an npub; NIP-50 full-text search via relay.nostr.band
 - **Multiple simultaneous games** — all games live side by side in the lobby, organised into Active / New / History tabs
 - **Session persistence** — sessions survive page reloads; reconnect picks up the latest state from relays
@@ -65,8 +65,9 @@ Output goes to `dist/` and can be served as a static site from any host.
 
 Each move is published as a **kind-30078 parameterized replaceable event**. The content is the full game state serialised as JSON and encrypted with NIP-44 to the opponent's public key. Because the event kind is replaceable, each player's relay only keeps their latest state — old moves are superseded automatically.
 
-Matchmaking uses two event tags:
+Matchmaking uses three event tags:
 - `quoridor-seek` — broadcast that you're looking for a game (carries a `v` tag for protocol version); refreshed every 2 minutes to stay visible; stale seeks from closed tabs are cleaned up on lobby entry
+- `quoridor-match` — published by the picker the moment they select a seeker, before the game state and invite; all lobby watchers subscribe to these and remove the seek from their list immediately; a pre-flight check prevents picking a seek that already has a claim
 - `quoridor-invite` — direct invite to a specific seeker (carries a `seek` tag referencing the matched seek d-tag so the seeker can cancel it)
 
 The player who sends the invite is Player 1 and moves first.
