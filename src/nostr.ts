@@ -20,6 +20,9 @@ const BOOTSTRAP_RELAYS = [
   'wss://nos.lol',
   'wss://relay.nostr.band',
   'wss://purplepag.es',
+  'wss://relay.primal.net',
+  'wss://relay.snort.social',
+  'wss://offchain.pub',
 ];
 
 // ─── NDK singleton ────────────────────────────────────────────────────────────
@@ -192,7 +195,7 @@ export interface ProfileSearchResult {
 const SEARCH_RELAYS = [
   'wss://relay.nostr.band',
   'wss://search.nos.lol',
-  'wss://nostr.wine',
+  'wss://relay.snort.social',
 ];
 
 interface SearchHandle {
@@ -508,6 +511,78 @@ export async function cancelOwnStaleSeeks(myPubkey: string): Promise<void> {
   }
 }
 
+// ─── Match claims ─────────────────────────────────────────────────────────────
+
+/**
+ * Publish a lightweight "match claim" event when a picker selects a seeker.
+ * Published before the game state and invite so other clients can see the
+ * seek is taken as early as possible.
+ * Returns the event's created_at timestamp (unix seconds).
+ */
+export async function publishMatchClaim(
+  seekDTag: string,
+  seekerPubkey: string,
+): Promise<number> {
+  const ndk = getNdk();
+  const event = new NDKEvent(ndk);
+  event.kind = GAME_KIND;
+  event.tags = [
+    ['d', `quoridor-match-${seekDTag}`],
+    ['t', 'quoridor'],
+    ['t', 'quoridor-match'],
+    ['p', seekerPubkey],
+  ];
+  event.content = '';
+  const relays = await event.publish();
+  if (relays.size === 0) throw new Error('Match claim not accepted by any relay');
+  return event.created_at ?? Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Subscribe to all match claim events in the lobby so the seek list can
+ * remove entries and detect race conditions the moment a claim is seen.
+ */
+export function subscribeToMatchClaims(
+  onClaimed: (seekDTag: string, pickerPubkey: string, timestamp: number) => void,
+): NDKSubscription {
+  const ndk = getNdk();
+  const since = Math.floor((Date.now() - SEEK_EXPIRY_MS) / 1000);
+  const sub = ndk.subscribe(
+    { kinds: [GAME_KIND as number], '#t': ['quoridor-match'], since },
+    { closeOnEose: false, groupable: false },
+  );
+  sub.on('event', (ev: NDKEvent) => {
+    const dTag = ev.tags.find(t => t[0] === 'd')?.[1]; // "quoridor-match-{seekDTag}"
+    const seekDTag = dTag?.replace(/^quoridor-match-/, '');
+    if (seekDTag) onClaimed(seekDTag, ev.pubkey, ev.created_at ?? 0);
+  });
+  return sub;
+}
+
+/**
+ * One-shot fetch: return the earliest match claim for a given seek, or null
+ * if none exists. Used for the pre-flight check in handlePickSeeker.
+ */
+export async function fetchMatchClaim(
+  seekDTag: string,
+): Promise<{ pickerPubkey: string; timestamp: number } | null> {
+  const ndk = getNdk();
+  const since = Math.floor((Date.now() - SEEK_EXPIRY_MS) / 1000);
+  try {
+    const events = await ndk.fetchEvents({
+      kinds: [GAME_KIND as number],
+      '#d': [`quoridor-match-${seekDTag}`],
+      since,
+    });
+    if (events.size === 0) return null;
+    const earliest = [...events].reduce((a, b) =>
+      (a.created_at ?? 0) < (b.created_at ?? 0) ? a : b,
+    );
+    return { pickerPubkey: earliest.pubkey, timestamp: earliest.created_at ?? 0 };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Publish a game invite to a specific seeker. The join code is public — the

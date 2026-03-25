@@ -30,6 +30,9 @@ import {
   publishInvite,
   subscribeToInvites,
   reconnectRelays,
+  publishMatchClaim,
+  subscribeToMatchClaims,
+  fetchMatchClaim,
   type SeekListEntry,
 } from './nostr';
 import { UserCard, useProfile } from './UserCard';
@@ -109,7 +112,7 @@ function SeekRow({ entry, onMatch }: { entry: SeekListEntry; onMatch: () => void
         disabled={clicked}
         onClick={() => { setClicked(true); onMatch(); }}
       >
-        Play
+        {clicked ? <span className="search-spinner" /> : 'Play'}
       </button>
     </div>
   );
@@ -159,6 +162,11 @@ export default function App() {
   const [seekList, setSeekList] = useState<Record<string, SeekListEntry>>({});
   const seekListSubRef = useRef<NDKSubscription | null>(null);
   const [seekPage, setSeekPage] = useState(0);
+
+  // Match claims: seeks that have been claimed by a picker (dTag → earliest claim).
+  const [matchedSeeks, setMatchedSeeks] = useState<Record<string, { pickerPubkey: string; timestamp: number }>>({});
+  // Active claim we published when picking a seeker, for background conflict detection.
+  const activeClaimRef = useRef<{ seekDTag: string; myTimestamp: number } | null>(null);
 
   // ── Lobby form state ────────────────────────────────────────────────────────
 
@@ -336,11 +344,57 @@ export default function App() {
       cancelOwnStaleSeeks(myPubkey).catch(() => {});
     }
 
+    setMatchedSeeks({});
+
     seekListSubRef.current = subscribeToSeekList(entry => {
       setSeekList(prev => ({ ...prev, [entry.pubkey]: entry }));
     });
-    return () => { seekListSubRef.current?.stop(); seekListSubRef.current = null; };
+
+    const claimSub = subscribeToMatchClaims((seekDTag, pickerPubkey, timestamp) => {
+      setMatchedSeeks(prev => {
+        const existing = prev[seekDTag];
+        if (!existing || timestamp < existing.timestamp) {
+          return { ...prev, [seekDTag]: { pickerPubkey, timestamp } };
+        }
+        return prev;
+      });
+      setSeekList(prev => {
+        const next = { ...prev };
+        for (const pk of Object.keys(next)) {
+          if (next[pk].dTag === seekDTag) { delete next[pk]; break; }
+        }
+        return next;
+      });
+    });
+
+    return () => {
+      seekListSubRef.current?.stop();
+      seekListSubRef.current = null;
+      claimSub.stop();
+    };
   }, [phase, myPubkey]);
+
+  // ── Background conflict detection ────────────────────────────────────────────
+  // While we have an active match claim and the opponent hasn't moved yet, watch
+  // for a competing claim with an earlier timestamp — which means we may have
+  // raced with another picker and the opponent might not join our game.
+  useEffect(() => {
+    const claim = activeClaimRef.current;
+    if (!claim) return;
+
+    const activeGame = Object.values(games).find(g => g.session.isCreator && !g.opponentSeen);
+    if (!activeGame) { activeClaimRef.current = null; return; }
+
+    if (activeGame.opponentSeen) { activeClaimRef.current = null; return; }
+
+    const competing = matchedSeeks[claim.seekDTag];
+    if (competing && competing.pickerPubkey !== myPubkey && competing.timestamp < claim.myTimestamp) {
+      setError(
+        'Another player may have matched this opponent at the same time. ' +
+        'If the game doesn\'t start, go back to the lobby and try again.',
+      );
+    }
+  }, [games, matchedSeeks, myPubkey]);
 
   // ── Subscribe helper ────────────────────────────────────────────────────────
 
@@ -531,8 +585,36 @@ export default function App() {
 
   const handlePickSeeker = async (seeker: SeekListEntry) => {
     setError('');
+
+    // 1. Instant check from subscription cache.
+    const cached = matchedSeeks[seeker.dTag];
+    if (cached && cached.pickerPubkey !== myPubkey) {
+      setError('This player was just matched with someone else.');
+      setSeekList(prev => { const n = { ...prev }; delete n[seeker.pubkey]; return n; });
+      return;
+    }
+
+    // 2. Quick relay fetch in case the subscription missed a recent claim.
+    const relayCheck = await fetchMatchClaim(seeker.dTag);
+    if (relayCheck && relayCheck.pickerPubkey !== myPubkey) {
+      setError('This player was just matched with someone else.');
+      setSeekList(prev => { const n = { ...prev }; delete n[seeker.pubkey]; return n; });
+      return;
+    }
+
+    // 3. Cancel own seeks, then publish our claim before the game state/invite.
     for (const seek of seeksRef.current) handleCancelSeek(seek.id);
     await requestNotifyPermission();
+
+    let myTimestamp: number;
+    try {
+      myTimestamp = await publishMatchClaim(seeker.dTag, seeker.pubkey);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to claim match');
+      return;
+    }
+    activeClaimRef.current = { seekDTag: seeker.dTag, myTimestamp };
+
     await doCreate(seeker.pubkey, 1, seeker.dTag); // picker is P1, moves first
   };
 
